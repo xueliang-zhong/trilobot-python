@@ -133,6 +133,8 @@ class Trilobot():
 
         try:
             self.sn3218 = sn3218.SN3218()
+        except FileNotFoundError:
+            raise RuntimeError("Please enable i2c!\n👉 run \"sudo raspi-config nonint do_i2c 0\" and try again! 👈")
         except NameError:
             self.sn3218 = sn3218
 
@@ -153,7 +155,10 @@ class Trilobot():
     def __del__(self):
         """ Clean up GPIO and underlighting when the class is deleted.
         """
-        self.sn3218.disable()
+        try:
+            self.sn3218.disable()
+        except AttributeError:
+            pass
         GPIO.cleanup()
 
     ###########
