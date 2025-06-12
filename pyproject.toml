@@ -37,7 +37,8 @@ classifiers = [
 ]
 dependencies = [
     "sn3218>=2.0.0",
-    "evdev"
+    "evdev",
+    "rpi-lgpio>=0.6"
 ]
 
 [tool.hatch.metadata.hooks.requirements_txt.optional-dependencies]
