@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
 import time
-import sn3218
-import RPi.GPIO as GPIO
 from colorsys import hsv_to_rgb
+
+import RPi.GPIO as GPIO
+import sn3218
 
 __version__ = '0.0.2'
 
@@ -579,8 +580,8 @@ and "sudo systemctl enable pigpiod" to have it auto-start on every boot')
             sys.exit()
 
         # set up servo control
-        from gpiozero.pins.pigpio import PiGPIOFactory
         from gpiozero import AngularServo
+        from gpiozero.pins.pigpio import PiGPIOFactory
         self.servo = AngularServo(self.SERVO_PIN, initial_angle=None,
                                   min_angle=min_angle,
                                   max_angle=max_angle,

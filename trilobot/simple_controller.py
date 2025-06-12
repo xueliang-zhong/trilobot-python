@@ -1,4 +1,5 @@
 import time
+
 from evdev import InputDevice, ecodes, list_devices
 
 

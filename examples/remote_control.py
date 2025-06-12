@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 
-import time
 import math
+import time
+
 from trilobot import *
 from trilobot import controller_mappings
 

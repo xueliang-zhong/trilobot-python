@@ -2,6 +2,7 @@
 
 import math
 import time
+
 from trilobot import Trilobot
 
 """

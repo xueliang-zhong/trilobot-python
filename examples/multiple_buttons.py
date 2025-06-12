@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from trilobot import Trilobot, NUM_BUTTONS
+from trilobot import NUM_BUTTONS, Trilobot
 
 """
 Shows how to read all of Trilobots buttons and tell if they were pressed or released.

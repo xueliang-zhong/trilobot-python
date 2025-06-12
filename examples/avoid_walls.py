@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from trilobot import Trilobot, BUTTON_A
+from trilobot import BUTTON_A, Trilobot
 
 """
 Further demonstrating Trilobot's ultrasound distance sensor, this example will drive
