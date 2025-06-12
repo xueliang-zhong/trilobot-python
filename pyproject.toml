@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "trilobot"
 dynamic = ["version", "readme", "optional-dependencies"]
-description = "Trilobot, a mid-level robot learning platform aimed at the Rasberry Pi SBC range"
+description = "Trilobot, a mid-level robot learning platform aimed at the Raspberry Pi SBC range"
 license = {file = "LICENSE"}
 requires-python = ">= 3.7"
 authors = [

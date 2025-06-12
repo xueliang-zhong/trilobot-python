@@ -177,7 +177,7 @@ class Trilobot():
     # LEDs #
     ########
     def set_button_led(self, button_led, value):
-        """ Turns the given button LED on or off, or to a brighness value.
+        """ Turns the given button LED on or off, or to a brightness value.
         button_led: the ID of the button LED to set the state of
         value: either True for on, False for off, or a number between 0.0 and 1.0
         """

@@ -1,6 +1,6 @@
 # Trilobot
 
-A mid-level robot learning platform aimed at the Rasberry Pi SBC range. Learn more - https://shop.pimoroni.com/products/trilobot
+A mid-level robot learning platform aimed at the Raspberry Pi SBC range. Learn more - https://shop.pimoroni.com/products/trilobot
 
 [![Build Status](https://img.shields.io/github/actions/workflow/status/pimoroni/trilobot-python/test.yml?branch=main)](https://github.com/pimoroni/trilobot-python/actions/workflows/test.yml)
 [![Coverage Status](https://coveralls.io/repos/github/pimoroni/trilobot-python/badge.svg?branch=main)](https://coveralls.io/github/pimoroni/trilobot-python?branch=main)
