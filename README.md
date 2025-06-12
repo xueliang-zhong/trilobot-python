@@ -2,7 +2,7 @@
 
 A mid-level robot learning platform aimed at the Rasberry Pi SBC range. Learn more - https://shop.pimoroni.com/products/trilobot
 
-[![Build Status](https://travis-ci.com/pimoroni/trilobot-python.svg?branch=main)](https://travis-ci.com/pimoroni/trilobot-python)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/pimoroni/trilobot-python/test.yml?branch=main)](https://github.com/pimoroni/trilobot-python/actions/workflows/test.yml)
 [![Coverage Status](https://coveralls.io/repos/github/pimoroni/trilobot-python/badge.svg?branch=main)](https://coveralls.io/github/pimoroni/trilobot-python?branch=main)
 [![PyPi Package](https://img.shields.io/pypi/v/trilobot.svg)](https://pypi.python.org/pypi/trilobot)
 [![Python Versions](https://img.shields.io/pypi/pyversions/trilobot.svg)](https://pypi.python.org/pypi/trilobot)
@@ -19,9 +19,7 @@ You can optionally run `sudo raspi-config` or the graphical Raspberry Pi Configu
 
 Stable library from PyPi:
 
-* Just run `pip3 install trilobot`
-
-In some cases you may need to use `sudo` or install pip with: `sudo apt install python3-pip`
+* Just run `pip install trilobot`
 
 Latest/development library from GitHub:
 
@@ -31,6 +29,6 @@ Latest/development library from GitHub:
 
 # Examples and Usage
 
-There are many examples to get you started with your Trilobot. With the library installed on your Raspberry Pi, these can be found in the `~/Pimoroni/trilobot/examples` directory. Details about what each one does can be found in the [examples readme](/examples/README.md).
+There are many examples to get you started with your Trilobot. With the library installed on your Raspberry Pi, these can be found in the `~/Pimoroni/trilobot/examples` directory. Details about what each one does can be found in the [examples readme](../examples/README.md).
 
 To take Trilobot further, the full API is described in the [library readme](/library/trilobot/README.md)
