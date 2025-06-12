@@ -85,6 +85,11 @@ exclude = [
     'build',
     'dist'
 ]
+ignore = [
+    'F403',
+    'F405'
+]
+
 line-length = 200
 
 [tool.codespell]
