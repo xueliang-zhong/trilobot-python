@@ -91,7 +91,7 @@ while True:
 
         tbot.set_left_speed(msl)
         tbot.set_right_speed(msr)
- 
+
         # Run a rotating rainbow effect on the RGB underlights
         for led in range(NUM_UNDERLIGHTS):
             led_h = h + (led * spacing)
