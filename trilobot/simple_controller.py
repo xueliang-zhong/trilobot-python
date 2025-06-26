@@ -1,4 +1,5 @@
 import time
+
 from evdev import InputDevice, ecodes, list_devices
 
 
@@ -148,6 +149,14 @@ class SimpleController():
         self.buttons = []
         self.axes = []
 
+    def axis_or_button_exists(self, collection, name):
+        if name is None:
+            return False
+        for item in collection:
+            if name in (item.name, item.alt_name):
+                return True
+        return False
+
     def register_button(self, name, ev_code, pressed_callback=None, released_callback=None, alt_name=None):
         """ Registers a button with this controller.
         Raises a ValueError if the button name is already used.
@@ -157,16 +166,11 @@ class SimpleController():
         released_callback: the function to call when a released event occurs
         alt_name: an alternative name to give the button (for where 'A' on one controller would be 'Cross' on another)
         """
-        for button in self.buttons:
-            if name == button.name:
-                raise ValueError("A button with the name '" + name + "' is already registered. Use a different name")
-            if name == button.alt_name:
-                raise ValueError("A button with the alt_name '" + name + "' is already registered. Use a different name")
-            if alt_name:
-                if alt_name == button.name:
-                    raise ValueError("A button with the name '" + alt_name + "' is already registered. Use a different alt_name")
-                if alt_name == button.alt_name:
-                    raise ValueError("A button with the alt_name '" + alt_name + "' is already registered. Use a different alt_name")
+        if self.axis_or_button_exists(self.buttons, name):
+            raise ValueError("A button with the name or alt_name '{}' is already registered. Use a different name".format(name))
+        if self.axis_or_button_exists(self.buttons, alt_name):
+            raise ValueError("A button with the name or alt_name '{}' is already registered. Use a different alt_name".format(alt_name))
+
         self.buttons.append(Button(name, alt_name, ev_code, ecodes.EV_KEY, 1, 0, pressed_callback, released_callback))
 
     def register_axis_as_button(self, name, ev_code, pressed_value=1, released_value=0, pressed_callback=None, released_callback=None, alt_name=None):
@@ -180,16 +184,11 @@ class SimpleController():
         released_callback: the function to call when a released event occurs
         alt_name: an alternative name to give the button (for where 'A' on one controller would be 'Cross' on another)
         """
-        for button in self.buttons:
-            if name == button.name:
-                raise ValueError("A button with the name '" + name + "' is already registered. Use a different name")
-            if name == button.alt_name:
-                raise ValueError("A button with the alt_name '" + name + "' is already registered. Use a different name")
-            if alt_name:
-                if alt_name == button.name:
-                    raise ValueError("A button with the name '" + alt_name + "' is already registered. Use a different alt_name")
-                if alt_name == button.alt_name:
-                    raise ValueError("A button with the alt_name '" + alt_name + "' is already registered. Use a different alt_name")
+        if self.axis_or_button_exists(self.buttons, name):
+            raise ValueError(f"A button with the name or alt_name '{name}' is already registered. Use a different name")
+        if self.axis_or_button_exists(self.buttons, alt_name):
+            raise ValueError(f"A button with the name or alt_name '{alt_name}' is already registered. Use a different alt_name")
+
         self.buttons.append(Button(name, alt_name, ev_code, ecodes.EV_ABS, pressed_value, released_value, pressed_callback, released_callback))
 
     def register_axis(self, name, ev_code, min_value=-1, max_value=1, deadzone_percent=0.0, changed_callback=None, alt_name=None):
@@ -203,16 +202,11 @@ class SimpleController():
         changed_callback: the function to call when a changed event occurs
         alt_name: an alternative name to give the axis (for where 'LT' on one controller would be 'L2' on another)
         """
-        for axis in self.axes:
-            if name == axis.name:
-                raise ValueError("An axis with the name '" + name + "' is already registered. Use a different name")
-            if name == axis.alt_name:
-                raise ValueError("An axis with the alt_name '" + name + "' is already registered. Use a different name")
-            if alt_name:
-                if alt_name == axis.name:
-                    raise ValueError("An axis with the name '" + alt_name + "' is already registered. Use a different alt_name")
-                if alt_name == axis.alt_name:
-                    raise ValueError("An axis with the alt_name '" + alt_name + "' is already registered. Use a different alt_name")
+        if self.axis_or_button_exists(self.axes, name):
+            raise ValueError(f"An axis with the name or alt_name '{name}' is already registered. Use a different name")
+        if self.axis_or_button_exists(self.axes, alt_name):
+            raise ValueError(f"An axis with the name or alt_name '{alt_name}' is already registered. Use a different alt_name")
+
         self.axes.append(Axis(name, alt_name, ev_code, min_value, max_value, -1.0, 1.0, deadzone_percent, changed_callback))
 
     def register_trigger_axis(self, name, ev_code, min_value=0, max_value=1, deadzone_percent=0.0, changed_callback=None, alt_name=None):
@@ -226,16 +220,11 @@ class SimpleController():
         changed_callback: the function to call when a changed event occurs
         alt_name: an alternative name to give the axis (for where 'LT' on one controller would be 'L2' on another)
         """
-        for axis in self.axes:
-            if name == axis.name:
-                raise ValueError("An axis with the name '" + name + "' is already registered. Use a different name")
-            if name == axis.alt_name:
-                raise ValueError("An axis with the alt_name '" + name + "' is already registered. Use a different name")
-            if alt_name:
-                if alt_name == axis.name:
-                    raise ValueError("An axis with the name '" + alt_name + "' is already registered. Use a different alt_name")
-                if alt_name == axis.alt_name:
-                    raise ValueError("An axis with the alt_name '" + alt_name + "' is already registered. Use a different alt_name")
+        if self.axis_or_button_exists(self.axes, name):
+            raise ValueError(f"An axis with the name or alt_name '{name}' is already registered. Use a different name")
+        if self.axis_or_button_exists(self.axes, alt_name):
+            raise ValueError(f"An axis with the name or alt_name '{alt_name}' is already registered. Use a different alt_name")
+
         self.axes.append(Axis(name, alt_name, ev_code, min_value, max_value, 0.0, 1.0, deadzone_percent, changed_callback))
 
     def assign_button_callbacks(self, name, pressed_callback, released_callback):
@@ -253,7 +242,7 @@ class SimpleController():
                 break
 
         if not button_found:
-            raise ValueError("A button with the name or alt_name'" + name + "' could not be found")
+            raise ValueError(f"A button with the name or alt_name '{name}' could not be found")
 
     def assign_axis_callback(self, name, changed_callback):
         """ Assigns or reassigns the changed event callback function for the named axis.
@@ -269,7 +258,7 @@ class SimpleController():
                 break
 
         if not axis_found:
-            raise ValueError("An axis with the name or alt_name'" + name + "' could not be found")
+            raise ValueError(f"An axis with the name or alt_nam '{name}' could not be found")
 
     def is_connected(self):
         """ Checks if the controller device is connected.
@@ -282,7 +271,7 @@ class SimpleController():
         debug: whether or not to display debug text informing of the status of the connection attempt
         """
         if debug:
-            print("Searching for '", self.controller_to_find, "'... ", sep="", end="")
+            print(f"Searching for '{self.controller_to_find}'... ")
 
         self.controller = None
         devices = [InputDevice(path) for path in list_devices()]
@@ -301,7 +290,7 @@ class SimpleController():
                 if self.controller_to_find == self.controller.name:
                     print("connected")
                 else:
-                    print("connected to '", self.controller.name, "'", sep="")
+                    print(f"connected to '{self.controller.name}'")
             else:
                 print("not found")
 
@@ -313,7 +302,7 @@ class SimpleController():
             currenttime = time.time()
             if currenttime - self.last_attempt_time >= time_between_attempts:
                 if debug:
-                    print("Attempting to reconnect to '", self.controller_to_find, "'... ", sep="", end="")
+                    print(f"Attempting to reconnect to '{self.controller_to_find}'... ")
                 self.connect(False)
                 self.last_attempt_time = currenttime
                 if debug:
@@ -321,7 +310,7 @@ class SimpleController():
                         if self.controller_to_find == self.controller.name:
                             print("reconnected")
                         else:
-                            print("reconnected to '", self.controller.name, "'", sep="")
+                            print(f"reconnected to '{self.controller.name}'")
                     else:
                         print("not found")
 
@@ -336,7 +325,7 @@ class SimpleController():
         for axis in self.axes:
             axis.reset()
         if debug:
-            print("Disconnected from '", self.controller_to_find, "'", sep="")
+            print(f"Disconnected from '{self.controller_to_find}'")
 
     def read_button(self, name):
         """ Reads the state of the named button.
@@ -346,7 +335,7 @@ class SimpleController():
         for button in self.buttons:
             if name == button.name or name == button.alt_name:
                 return button.is_pressed()
-        raise ValueError("Cannot find button '" + name + "'")
+        raise ValueError(f"Cannot find button '{name}'")
 
     def read_axis(self, name):
         """ Reads the state of the named axis.
@@ -356,7 +345,7 @@ class SimpleController():
         for axis in self.axes:
             if name == axis.name or name == axis.alt_name:
                 return axis.get_percent()
-        raise ValueError("Cannot find axis '" + name + "'")
+        raise ValueError(f"Cannot find axis '{name}'")
 
     def update(self, debug=True):
         """ Updates the stored state of the controller device.
@@ -372,11 +361,11 @@ class SimpleController():
                         if button.is_this(event.code, event.type):
                             if event.value == button.pressed_value:
                                 if debug:
-                                    print("'", button.name, "' pressed", sep="")
+                                    print(f"'{button.name}' pressed")
                                 button.set_pressed()
                             elif event.value == button.released_value:
                                 if debug:
-                                    print("'", button.name, "' released", sep="")
+                                    print(f"'{button.name}' released")
                                 button.clear_pressed()
 
                     for axis in self.axes:
@@ -386,15 +375,15 @@ class SimpleController():
                             if percent > 0.0 - axis.deadzone_percent and percent < 0.0 + axis.deadzone_percent:
                                 percent = 0.0
                                 if debug:
-                                    print("'", axis.name, "' changed to 0.000 (within deadzone)", sep="")
+                                    print(f"'{axis.name}' changed to 0.000 (within deadzone)")
                             else:
                                 if debug:
-                                    print("'", axis.name, "' changed to {:.3f}".format(percent), sep="")
+                                    print(f"'{axis.name}' changed to {percent:.3f}")
                             axis.set_percent(percent)
 
                     event = self.controller.read_one()
             except OSError:
                 self.disconnect(False)
                 if debug:
-                    print("Connection to '", self.controller_to_find, "' lost", sep="")
+                    print(f"Connection to '{self.controller_to_find}' lost")
                 raise RuntimeError()

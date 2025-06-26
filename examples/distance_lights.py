@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 
 import time
-from trilobot import Trilobot, BUTTON_A
+
+from trilobot import BUTTON_A, Trilobot
 
 """
 This brings together the underlights and the distance sensor, using the underlights

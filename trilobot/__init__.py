@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
 import time
-import sn3218
-import RPi.GPIO as GPIO
 from colorsys import hsv_to_rgb
+
+import RPi.GPIO as GPIO
+import sn3218
 
 __version__ = '0.0.2'
 
@@ -132,6 +133,8 @@ class Trilobot():
 
         try:
             self.sn3218 = sn3218.SN3218()
+        except FileNotFoundError:
+            raise RuntimeError("Please enable i2c!\n👉 run \"sudo raspi-config nonint do_i2c 0\" and try again! 👈")
         except NameError:
             self.sn3218 = sn3218
 
@@ -152,7 +155,10 @@ class Trilobot():
     def __del__(self):
         """ Clean up GPIO and underlighting when the class is deleted.
         """
-        self.sn3218.disable()
+        try:
+            self.sn3218.disable()
+        except AttributeError:
+            pass
         GPIO.cleanup()
 
     ###########
@@ -163,7 +169,7 @@ class Trilobot():
         button: the ID of the button to read the state of
         Returns True for pressed, False for released
         """
-        if type(button) is not int:
+        if not isinstance(button, int):
             raise TypeError("button must be an integer")
 
         if button not in range(NUM_BUTTONS):
@@ -176,11 +182,11 @@ class Trilobot():
     # LEDs #
     ########
     def set_button_led(self, button_led, value):
-        """ Turns the given button LED on or off, or to a brighness value.
+        """ Turns the given button LED on or off, or to a brightness value.
         button_led: the ID of the button LED to set the state of
         value: either True for on, False for off, or a number between 0.0 and 1.0
         """
-        if type(button_led) is not int:
+        if not isinstance(button_led, int):
             raise TypeError("led must be an integer")
 
         if button_led not in range(NUM_BUTTONS):
@@ -206,7 +212,7 @@ class Trilobot():
         motor: the ID of the motor to set the state of
         speed: the motor speed, between -1.0 and 1.0
         """
-        if type(motor) is not int:
+        if not isinstance(motor, int):
             raise TypeError("motor must be an integer")
 
         if motor not in range(2):
@@ -349,7 +355,7 @@ class Trilobot():
         b: the blue component of the color (from 0 to 255), if r_color was not given a list/tuple
         show: whether or not to show the new color immediately
         """
-        if type(light) is not int:
+        if not isinstance(light, int):
             raise TypeError("light must be an integer")
 
         if light not in range(NUM_UNDERLIGHTS):
@@ -454,7 +460,7 @@ class Trilobot():
         b: the blue component of the color (from 0 to 255), if r_color was not given a list/tuple
         show: whether or not to show the new color immediately
         """
-        if type(lights) != list and type(lights) != tuple:
+        if not isinstance(lights, (list, tuple)):
             raise TypeError("lights must be a list or tuple containing the numbers for the underlights to set (from 0 to 5)")
 
         light_count = len(lights)
@@ -579,8 +585,8 @@ and "sudo systemctl enable pigpiod" to have it auto-start on every boot')
             sys.exit()
 
         # set up servo control
-        from gpiozero.pins.pigpio import PiGPIOFactory
         from gpiozero import AngularServo
+        from gpiozero.pins.pigpio import PiGPIOFactory
         self.servo = AngularServo(self.SERVO_PIN, initial_angle=None,
                                   min_angle=min_angle,
                                   max_angle=max_angle,

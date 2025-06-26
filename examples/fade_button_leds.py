@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 
 import time
-from trilobot import Trilobot, NUM_BUTTONS
+
+from trilobot import NUM_BUTTONS, Trilobot
 
 """
 Shows how to control the brightness of the button LEDs, by having them fade up and down.

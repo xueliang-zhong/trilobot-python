@@ -2,6 +2,7 @@
 
 import math
 import time
+
 from trilobot import Trilobot
 
 """
@@ -42,7 +43,7 @@ for j in range(SWEEPS):
         tbot.set_servo_value(math.sin(math.radians(i)))
         time.sleep(0.01)
 
-print("Now Sweep", SWEEPS, "Times, in descrete steps")
+print("Now Sweep", SWEEPS, "Times, in discrete steps")
 for j in range(SWEEPS):
     print("Discrete Sweep:", j)
 

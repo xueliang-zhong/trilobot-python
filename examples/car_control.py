@@ -14,10 +14,9 @@ At startup a list of supported controllers will be shown, with you being asked t
 The program will then attempt to connect to the controller, and if successful Trilobot's
 underlights will illuminate with a rainbow pattern.
 
-From there you can drive your Trilobot around using the left analog stick or d-pad.
-Pressing the right trigger will switch to Tank-steer mode, where the left analog stick
-controls the left wheel, and the right analog stick controls the right wheel.
-Pressing the left trigger will switch back to regular mode.
+From there you can drive your Trilobot around like a videogame car- using the right trigger
+to accelerate and the left trigger to brake. The left analog stick controls steering and
+will also steer you on the spot for more accurate control.
 
 If your controller becomes disconnected Trilobot will stop moving and show a slow red
 pulsing animation on its underlights. Simply reconnect your controller and after 10 to 20
@@ -27,8 +26,10 @@ Support for further controllers can be added to library/trilobot/controller_mapp
 
 Press CTRL + C to exit.
 """
-print("Trilobot Example: Remote Control\n")
+print("Trilobot Example: Car Control\n")
 
+
+SPEED_DAMPING = 0.2
 
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
@@ -60,7 +61,9 @@ h = 0
 v = 0
 spacing = 1.0 / NUM_UNDERLIGHTS
 
-tank_steer = False
+speed_left = 0
+speed_right = 0
+
 while True:
 
     if not controller.is_connected():
@@ -76,49 +79,24 @@ while True:
 
     if controller.is_connected():
 
-        # Read the controller bumpers to see if the tank steer mode has been enabled or disabled
-        try:
-            if controller.read_button("L1") and tank_steer:
-                tank_steer = False
-                print("Tank Steering Disabled")
-            if controller.read_button("R1") and not tank_steer:
-                tank_steer = True
-                print("Tank Steering Enabled")
-        except ValueError:
-            # Cannot find 'L1' or 'R1' on this controller
-            print("Tank Steering Not Available")
+        accel = controller.read_axis("R2")
+        brake = controller.read_axis("L2")
+        steer = controller.read_axis("LX") # Left = -1, Right = +1
 
-        try:
-            if tank_steer:
-                # Have the left stick's Y axis control the left motor, and the right stick's Y axis control the right motor
-                ly = controller.read_axis("LY")
-                ry = controller.read_axis("RY")
-                tbot.set_left_speed(-ly)
-                tbot.set_right_speed(-ry)
-            else:
-                # Have the left stick control both motors
-                lx = controller.read_axis("LX")
-                ly = 0 - controller.read_axis("LY")
-                tbot.set_left_speed(ly + lx)
-                tbot.set_right_speed(ly - lx)
-        except ValueError:
-            # Cannot find 'LX', 'LY', or 'RY' on this controller
-            tbot.disable_motors()
+        speed_left = accel - brake
+        speed_right = accel - brake
+
+        msl = speed_left + (steer)
+        msr = speed_right + (steer * -1)
+
+        tbot.set_left_speed(msl)
+        tbot.set_right_speed(msr)
 
         # Run a rotating rainbow effect on the RGB underlights
         for led in range(NUM_UNDERLIGHTS):
             led_h = h + (led * spacing)
-            if led_h >= 1.0:
-                led_h -= 1.0
-
-            try:
-                if controller.read_button("A"):
-                    tbot.set_underlight_hsv(led, 0.0, 0.0, 0.7, show=False)
-                else:
-                    tbot.set_underlight_hsv(led, led_h, show=False)
-            except ValueError:
-                # Cannot find 'A' on this controller
-                tbot.set_underlight_hsv(led, led_h, show=False)
+            led_h %= 1.0
+            tbot.set_underlight_hsv(led, led_h, show=False)
 
         tbot.show_underlighting()
 
