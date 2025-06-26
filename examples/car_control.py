@@ -43,7 +43,7 @@ controller = controller_mappings.choose_controller()
 # Attempt to connect to the created controller
 controller.connect()
 
-# Run an amination on the underlights to show a controller has been selected
+# Run an animation on the underlights to show a controller has been selected
 for led in range(NUM_UNDERLIGHTS):
     tbot.clear_underlighting(show=False)
     tbot.set_underlight(led, RED)
