@@ -152,14 +152,31 @@ class Trilobot():
         # setup the servo object to None, for later initialisation
         self.servo = None
 
-    def __del__(self):
-        """ Clean up GPIO and underlighting when the class is deleted.
+    def cleanup(self):
+        """ Explicitly clean up GPIO and underlighting resources.
+        Call this instead of relying on __del__ for deterministic cleanup.
         """
         try:
             self.sn3218.disable()
         except AttributeError:
             pass
+        # Stop PWM objects before GPIO.cleanup() to avoid backend shutdown issues.
+        for pwm in getattr(self, 'led_pwm_mapping', {}).values():
+            try:
+                pwm.stop()
+            except Exception:
+                pass
+        for pwm in getattr(self, 'motor_pwm_mapping', {}).values():
+            try:
+                pwm.stop()
+            except Exception:
+                pass
         GPIO.cleanup()
+
+    def __del__(self):
+        """ Clean up GPIO and underlighting when the class is deleted.
+        """
+        self.cleanup()
 
     ###########
     # Buttons #
@@ -522,6 +539,8 @@ class Trilobot():
         So to extend the distance that can be measured, use a larger timeout.
         """
 
+        timeout_ns = timeout * 1000000
+
         # Start timing
         start_time = time.perf_counter_ns()
         time_elapsed = 0
@@ -530,20 +549,38 @@ class Trilobot():
         distance = -999
 
         # Loop until the timeout is exceeded or all samples have been taken
-        while (count < samples) and (time_elapsed < timeout * 1000000):
+        while (count < samples) and (time_elapsed < timeout_ns):
             # Trigger
+            GPIO.output(self.ULTRA_TRIG_PIN, 0)
+            time.sleep(0.00006)
             GPIO.output(self.ULTRA_TRIG_PIN, 1)
-            time.sleep(.00001)  # 10 microseconds
+            time.sleep(0.00001)  # 10 microseconds
             GPIO.output(self.ULTRA_TRIG_PIN, 0)
 
-            # Wait for the ECHO pin to go high
-            # wait for the pulse rise
-            GPIO.wait_for_edge(self.ULTRA_ECHO_PIN, GPIO.RISING, timeout=timeout)
-            pulse_start = time.perf_counter_ns()
+            sample_start = time.perf_counter_ns()
+            pulse_start = None
+            pulse_end = None
 
-            # And wait for it to fall
-            GPIO.wait_for_edge(self.ULTRA_ECHO_PIN, GPIO.FALLING, timeout=timeout)
-            pulse_end = time.perf_counter_ns()
+            # Poll rather than use wait_for_edge(), which is unreliable on some Pi setups.
+            while time.perf_counter_ns() - sample_start < timeout_ns:
+                now = time.perf_counter_ns()
+                if GPIO.input(self.ULTRA_ECHO_PIN):
+                    pulse_start = now
+                    break
+
+            if pulse_start is None:
+                time_elapsed = time.perf_counter_ns() - start_time
+                continue
+
+            while time.perf_counter_ns() - sample_start < timeout_ns:
+                now = time.perf_counter_ns()
+                if not GPIO.input(self.ULTRA_ECHO_PIN):
+                    pulse_end = now
+                    break
+
+            if pulse_end is None:
+                time_elapsed = time.perf_counter_ns() - start_time
+                continue
 
             # get the duration
             pulse_duration = pulse_end - pulse_start - offset
@@ -551,7 +588,7 @@ class Trilobot():
                 pulse_duration = 0  # Prevent negative readings when offset was too high
 
             # Only count reading if achieved in less than timeout total time
-            if pulse_duration < timeout * 1000000:
+            if pulse_duration < timeout_ns:
                 # Convert to distance and add to total
                 total_pulse_durations += pulse_duration
                 count += 1
@@ -573,26 +610,24 @@ class Trilobot():
         if self.servo is not None:
             raise RuntimeError("Servo is already initialised.")
 
-        # if not exists /var/run/pigpio.pid:
-        #    stop now
         import os
-        import sys
-        if not os.path.isfile('/var/run/pigpio.pid'):
-            print('Trilobot uses pigpio for Servo control.')
-            print('If it is not already installed, please install it with "sudo apt install pigpio"')
-            print('Then run "sudo pigpiod" to enable it until the next boot, \
-and "sudo systemctl enable pigpiod" to have it auto-start on every boot')
-            sys.exit()
-
-        # set up servo control
+        import warnings
         from gpiozero import AngularServo
-        from gpiozero.pins.pigpio import PiGPIOFactory
-        self.servo = AngularServo(self.SERVO_PIN, initial_angle=None,
-                                  min_angle=min_angle,
-                                  max_angle=max_angle,
-                                  min_pulse_width=min_pulse_us / 1000000,
-                                  max_pulse_width=max_pulse_us / 1000000,
-                                  pin_factory=PiGPIOFactory())
+
+        servo_kwargs = dict(initial_angle=None,
+                            min_angle=min_angle,
+                            max_angle=max_angle,
+                            min_pulse_width=min_pulse_us / 1000000,
+                            max_pulse_width=max_pulse_us / 1000000)
+
+        # Prefer pigpio for steadier PWM, but fall back to local GPIOZero control.
+        if os.path.isfile('/var/run/pigpio.pid'):
+            from gpiozero.pins.pigpio import PiGPIOFactory
+            servo_kwargs['pin_factory'] = PiGPIOFactory()
+        else:
+            warnings.warn('pigpiod not running; falling back to local GPIOZero PWM for servo control', RuntimeWarning)
+
+        self.servo = AngularServo(self.SERVO_PIN, **servo_kwargs)
 
     def set_servo_value(self, value):
         """ Sets the servo to a given value between its minimum and maximum angles.
