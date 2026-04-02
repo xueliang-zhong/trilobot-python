@@ -62,6 +62,9 @@ class AutonomousCarConfig:
     stuck_spin_s: float = 0.55
     open_space_distance: float = 70.0
     open_space_speed: float = 0.82
+    speed_accel_rate: float = 0.10   # max speed increase per loop cycle
+    speed_decel_rate: float = 0.18   # max speed decrease per loop cycle
+    open_space_scan_s: float = 1.2   # proactive scan interval when all angles are clear
 
 
 @dataclass(frozen=True)
@@ -83,6 +86,7 @@ class AutonomousCarController:
     last_scan_time: float = field(default=-math.inf)
     target_heading: int = field(default=0)
     target_heading_time: float = field(default=-math.inf)
+    current_speed: float = field(default=0.0)
 
     def __post_init__(self):
         self.front_history = deque(maxlen=self.config.front_history_size)
@@ -123,7 +127,10 @@ class AutonomousCarController:
             return True
         if front_distance <= self.config.caution_distance:
             return True
-        if now - self.last_scan_time >= self.config.proactive_scan_s:
+        positive_scan = [v for v in self.last_scan.values() if v > 0.0]
+        was_open = bool(positive_scan) and all(v > self.config.open_space_distance for v in positive_scan)
+        proactive_interval = self.config.open_space_scan_s if was_open else self.config.proactive_scan_s
+        if now - self.last_scan_time >= proactive_interval:
             return True
         if now - self.last_scan_time >= self.config.stale_scan_s:
             left = self.sanitize_distance(self.last_scan.get(-45, 0.0))
@@ -255,6 +262,7 @@ class AutonomousCarController:
         heading = self.select_heading(self.last_scan, front_distance, now=now)
 
         if front_distance <= self.config.danger_distance:
+            self.current_speed = 0.0
             heading = self.select_heading(self.last_scan, front_distance, now=now, escape=True)
             if heading == 0:
                 heading = -80 if sum(self.recent_turns) >= 0 else 80
@@ -279,7 +287,12 @@ class AutonomousCarController:
             base_speed = self.config.cautious_speed
         else:
             base_speed = self.config.cruise_speed
-        speed = base_speed
+        delta = base_speed - self.current_speed
+        if delta > 0:
+            speed = self.current_speed + min(delta, self.config.speed_accel_rate)
+        else:
+            speed = self.current_speed + max(delta, -self.config.speed_decel_rate)
+        self.current_speed = speed
         steer = 0.0
         max_angle = max(abs(angle) for angle in self.config.scan_angles) or 1
 

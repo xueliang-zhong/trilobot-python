@@ -141,6 +141,8 @@ class AutonomousCarExampleTests(unittest.TestCase):
         # All scan distances exceed open_space_distance
         controller.last_scan = {-80: 80.0, -45: 90.0, 0: 100.0, 45: 95.0, 80: 85.0}
         controller.last_scan_time = 10.0
+        # Pre-warm speed to simulate steady-state (speed smoothing starts from 0)
+        controller.current_speed = config.open_space_speed
 
         command = controller.plan(front_distance=100.0, now=10.1)
 
@@ -161,6 +163,8 @@ class AutonomousCarExampleTests(unittest.TestCase):
         # One scan distance is below open_space_distance; use symmetric side values to ensure heading=0
         controller.last_scan = {-80: 75.0, -45: 75.0, 0: 60.0, 45: 75.0, 80: 75.0}
         controller.last_scan_time = 10.0
+        # Pre-warm speed to simulate steady-state (speed smoothing starts from 0)
+        controller.current_speed = config.cruise_speed
 
         command = controller.plan(front_distance=100.0, now=10.1)
 
@@ -173,6 +177,68 @@ class AutonomousCarExampleTests(unittest.TestCase):
         self.assertLessEqual(command.left_speed, max_expected + 1e-9)
         # More discriminating assertion: with heading=0, left_speed should equal right_speed and equal cruise_speed
         self.assertAlmostEqual(command.left_speed, config.cruise_speed, places=5)
+
+
+    def test_plan_speed_ramps_up_gradually(self):
+        module = load_autonomous_car_module()
+        config = module.AutonomousCarConfig(
+            open_space_distance=70.0,
+            open_space_speed=0.82,
+            cruise_distance=55.0,
+            speed_accel_rate=0.10,
+        )
+        controller = module.AutonomousCarController(config)
+        self.assertEqual(controller.current_speed, 0.0)
+        # All scan distances clear -> open_space_speed=0.82 is the target
+        controller.last_scan = {-80: 80.0, -45: 90.0, 0: 100.0, 45: 95.0, 80: 85.0}
+        controller.last_scan_time = 10.0
+
+        command = controller.plan(front_distance=80.0, now=10.1)
+
+        self.assertEqual(command.mode, "drive")
+        # Speed should move toward target by at most speed_accel_rate from 0
+        self.assertAlmostEqual(command.left_speed, command.right_speed, places=5)
+        self.assertLessEqual(command.left_speed, config.speed_accel_rate + 1e-9)
+        self.assertGreater(controller.current_speed, 0.0)
+        self.assertLessEqual(controller.current_speed, config.speed_accel_rate)
+
+    def test_plan_speed_resets_to_zero_on_escape(self):
+        module = load_autonomous_car_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+        controller.current_speed = 0.5
+        controller.last_scan = {-80: 62.0, -45: 58.0, 0: 10.0, 45: 30.0, 80: 18.0}
+        controller.last_scan_time = 3.0
+
+        command = controller.plan(front_distance=10.0, now=3.1)
+
+        self.assertEqual(command.mode, "escape")
+        self.assertEqual(controller.current_speed, 0.0)
+
+    def test_should_scan_uses_shorter_interval_in_open_space(self):
+        module = load_autonomous_car_module()
+        config = module.AutonomousCarConfig(open_space_distance=70.0, open_space_scan_s=1.2, proactive_scan_s=2.4)
+        controller = module.AutonomousCarController(config)
+        # All scan values above open_space_distance -> was_open=True
+        controller.last_scan = {-80: 100.0, -45: 100.0, 0: 100.0, 45: 100.0, 80: 100.0}
+
+        now = 100.0
+        controller.last_scan_time = now - 1.5
+        self.assertTrue(controller.should_scan(front_distance=100.0, now=now))
+
+        controller.last_scan_time = now - 0.8
+        self.assertFalse(controller.should_scan(front_distance=100.0, now=now))
+
+    def test_should_scan_uses_normal_interval_when_not_open_space(self):
+        module = load_autonomous_car_module()
+        config = module.AutonomousCarConfig(open_space_distance=70.0, open_space_scan_s=1.2, proactive_scan_s=2.4)
+        controller = module.AutonomousCarController(config)
+        # One scan value below open_space_distance -> was_open=False
+        controller.last_scan = {-80: 100.0, -45: 100.0, 0: 60.0, 45: 100.0, 80: 100.0}
+
+        now = 100.0
+        controller.last_scan_time = now - 1.5
+        # 1.5s < proactive_scan_s=2.4s so should not trigger proactive scan
+        self.assertFalse(controller.should_scan(front_distance=100.0, now=now))
 
 
 if __name__ == "__main__":
