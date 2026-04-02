@@ -1,3 +1,4 @@
 timestamp_utc	generation	status	commit	note
 2026-04-02T09:00:00Z	gen02	success	c2d4168	stuck detection + open-space boost; verified on Pi
 2026-04-02T09:30:00Z	gen03	success	2f5a301	speed smoothing + adaptive open-space scan interval; verified on Pi
+2026-04-02T10:00:00Z	gen04	success	700d0a8	per-angle EMA openness bias; verified on Pi, 19 tests
