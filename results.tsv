@@ -1,0 +1,2 @@
+timestamp_utc	generation	status	commit	note
+2026-04-02T09:00:00Z	gen02	success	c2d4168	stuck detection + open-space boost; verified on Pi
