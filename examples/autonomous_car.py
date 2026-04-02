@@ -269,10 +269,9 @@ class AutonomousCarController:
                 colour=(255, 48, 0),
             )
 
-        open_space = bool(self.last_scan) and all(
-            v > self.config.open_space_distance
-            for v in self.last_scan.values()
-            if v > 0.0
+        positive_values = [v for v in self.last_scan.values() if v > 0.0]
+        open_space = bool(positive_values) and all(
+            v > self.config.open_space_distance for v in positive_values
         )
         if front_distance > self.config.cruise_distance and open_space:
             base_speed = self.config.open_space_speed

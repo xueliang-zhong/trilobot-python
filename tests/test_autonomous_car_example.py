@@ -158,8 +158,8 @@ class AutonomousCarExampleTests(unittest.TestCase):
             cruise_distance=55.0,
         )
         controller = module.AutonomousCarController(config)
-        # One scan distance is below open_space_distance
-        controller.last_scan = {-80: 80.0, -45: 50.0, 0: 100.0, 45: 95.0, 80: 85.0}
+        # One scan distance is below open_space_distance; use symmetric side values to ensure heading=0
+        controller.last_scan = {-80: 75.0, -45: 75.0, 0: 60.0, 45: 75.0, 80: 75.0}
         controller.last_scan_time = 10.0
 
         command = controller.plan(front_distance=100.0, now=10.1)
@@ -171,6 +171,8 @@ class AutonomousCarExampleTests(unittest.TestCase):
         # At least one side should not exceed cruise_speed significantly
         max_expected = config.cruise_speed * (1.0 + config.steer_gain)
         self.assertLessEqual(command.left_speed, max_expected + 1e-9)
+        # More discriminating assertion: with heading=0, left_speed should equal right_speed and equal cruise_speed
+        self.assertAlmostEqual(command.left_speed, config.cruise_speed, places=5)
 
 
 if __name__ == "__main__":
