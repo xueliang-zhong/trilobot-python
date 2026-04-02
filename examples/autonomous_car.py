@@ -67,6 +67,7 @@ class AutonomousCarConfig:
     open_space_scan_s: float = 1.2   # proactive scan interval when all angles are clear
     history_alpha: float = 0.25     # EMA smoothing: higher = more reactive to recent scans
     history_bias_gain: float = 8.0  # score bonus/penalty scale for historical openness
+    side_correction_gain: float = 0.10  # proportional steer correction away from closer side wall
 
 
 @dataclass(frozen=True)
@@ -317,6 +318,17 @@ class AutonomousCarController:
             if front_distance <= self.config.caution_distance:
                 steer *= 1.20
 
+        # Side-proximity correction: nudge away from closer wall when heading is roughly straight
+        if abs(heading) < 30 and front_distance > self.config.caution_distance:
+            left_side = self.last_scan.get(-45, 0.0)
+            right_side = self.last_scan.get(45, 0.0)
+            if left_side > 0.0 and right_side > 0.0:
+                total = left_side + right_side
+                if total > 0.0:
+                    # positive when right > left (left wall closer) → steer right (positive = right)
+                    side_corr = (right_side - left_side) / total * self.config.side_correction_gain
+                    steer = max(-1.0, min(1.0, steer + side_corr))
+
         left_speed = max(-1.0, min(1.0, speed * (1.0 + steer * self.config.steer_gain)))
         right_speed = max(-1.0, min(1.0, speed * (1.0 - steer * self.config.steer_gain)))
 
@@ -371,6 +383,7 @@ def apply_command(tbot, controller: AutonomousCarController, command: MotionComm
                 tbot.turn_right(controller.config.escape_turn_speed)
             time.sleep(controller.config.stuck_spin_s)
             tbot.stop()
+        controller.last_scan_time = -math.inf
         return
 
     if abs(command.heading) >= 30:

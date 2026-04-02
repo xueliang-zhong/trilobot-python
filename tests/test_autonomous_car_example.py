@@ -1,4 +1,5 @@
 import importlib.util
+import math
 import sys
 import unittest
 from pathlib import Path
@@ -189,8 +190,9 @@ class AutonomousCarExampleTests(unittest.TestCase):
         )
         controller = module.AutonomousCarController(config)
         self.assertEqual(controller.current_speed, 0.0)
-        # All scan distances clear -> open_space_speed=0.82 is the target
-        controller.last_scan = {-80: 80.0, -45: 90.0, 0: 100.0, 45: 95.0, 80: 85.0}
+        # All scan distances clear and symmetric -> open_space_speed=0.82 is the target
+        # Using symmetric sides so side-proximity correction does not affect left/right balance
+        controller.last_scan = {-80: 85.0, -45: 90.0, 0: 100.0, 45: 90.0, 80: 85.0}
         controller.last_scan_time = 10.0
 
         command = controller.plan(front_distance=80.0, now=10.1)
@@ -294,6 +296,82 @@ class AutonomousCarExampleTests(unittest.TestCase):
         score_neg45 = controller.score_heading(ordered_scan, index_neg45, front_distance=60.0)
 
         self.assertAlmostEqual(score_pos45, score_neg45)
+
+
+    def test_side_correction_nudges_away_from_left_wall(self):
+        module = load_autonomous_car_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+        now = 100.0
+        # Scan chosen so heading=0 wins but -45 (left side) < 45 (right side)
+        controller.last_scan = {-80: 20.0, -45: 30.0, 0: 80.0, 45: 55.0, 80: 20.0}
+        controller.last_scan_time = now - 0.1
+        # Pre-warm front_history so median = 80.0
+        for _ in range(5):
+            controller.front_history.append(80.0)
+
+        command = controller.plan(front_distance=80.0, now=now)
+
+        self.assertEqual(command.mode, "drive")
+        self.assertEqual(command.heading, 0)
+        # left wall closer (-45=30 < 45=55) → steer right (positive) → left_speed > right_speed
+        self.assertGreater(command.left_speed, command.right_speed)
+
+    def test_side_correction_nudges_away_from_right_wall(self):
+        module = load_autonomous_car_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+        now = 100.0
+        # Symmetric mirror: right wall closer (45=30 < -45=55)
+        controller.last_scan = {-80: 20.0, -45: 55.0, 0: 80.0, 45: 30.0, 80: 20.0}
+        controller.last_scan_time = now - 0.1
+        # Pre-warm front_history so median = 80.0
+        for _ in range(5):
+            controller.front_history.append(80.0)
+
+        command = controller.plan(front_distance=80.0, now=now)
+
+        self.assertEqual(command.mode, "drive")
+        self.assertEqual(command.heading, 0)
+        # right wall closer (45=30 < -45=55) → steer left (negative) → right_speed > left_speed
+        self.assertGreater(command.right_speed, command.left_speed)
+
+    def test_side_correction_absent_when_turning(self):
+        module = load_autonomous_car_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+        now = 100.0
+        # Scan that causes heading=45 (front=60 is clear, right side much more open)
+        controller.last_scan = {-80: 30.0, -45: 30.0, 0: 60.0, 45: 100.0, 80: 90.0}
+        controller.last_scan_time = now - 0.1
+
+        command = controller.plan(front_distance=60.0, now=now)
+
+        self.assertEqual(command.mode, "drive")
+        # heading should be 45, so abs(heading)=45 >= 30 and side correction does not apply
+        self.assertEqual(command.heading, 45)
+
+    def test_apply_command_resets_scan_time_after_escape(self):
+        module = load_autonomous_car_module()
+
+        class MockTbot:
+            def fill_underlighting(self, c): pass
+            def backward(self, s): pass
+            def turn_left(self, s): pass
+            def turn_right(self, s): pass
+            def stop(self): pass
+            def set_motor_speeds(self, l, r): pass
+
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+        controller.last_scan_time = 99.0
+        escape_command = module.MotionCommand(
+            mode="escape",
+            left_speed=-0.45,
+            right_speed=-0.45,
+            heading=-80,
+            colour=(255, 48, 0),
+        )
+
+        module.apply_command(MockTbot(), controller, escape_command)
+
+        self.assertEqual(controller.last_scan_time, -math.inf)
 
 
 if __name__ == "__main__":
