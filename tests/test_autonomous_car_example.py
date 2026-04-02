@@ -240,6 +240,61 @@ class AutonomousCarExampleTests(unittest.TestCase):
         # 1.5s < proactive_scan_s=2.4s so should not trigger proactive scan
         self.assertFalse(controller.should_scan(front_distance=100.0, now=now))
 
+    def test_update_scan_builds_angle_ema(self):
+        module = load_autonomous_car_module()
+        config = module.AutonomousCarConfig(history_alpha=0.25)
+        controller = module.AutonomousCarController(config)
+
+        scan1 = {-45: 40.0, 0: 50.0, 45: 60.0}
+        controller.update_scan(scan1, now=1.0)
+
+        # After first call, angle_ema should equal the scan values
+        for angle, dist in scan1.items():
+            self.assertAlmostEqual(controller.angle_ema[angle], dist)
+
+        scan2 = {-45: 20.0, 0: 80.0, 45: 100.0}
+        controller.update_scan(scan2, now=2.0)
+
+        # After second call, verify EMA formula: new_ema = alpha * new_val + (1 - alpha) * old_ema
+        alpha = 0.25
+        for angle in scan1:
+            expected = alpha * scan2[angle] + (1.0 - alpha) * scan1[angle]
+            self.assertAlmostEqual(controller.angle_ema[angle], expected)
+
+    def test_score_heading_biased_toward_historically_open_angle(self):
+        module = load_autonomous_car_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+        # Right side (45) is historically much more open
+        controller.angle_ema = {-80: 30.0, -45: 30.0, 0: 30.0, 45: 90.0, 80: 30.0}
+
+        scan = {-80: 50.0, -45: 50.0, 0: 50.0, 45: 50.0, 80: 50.0}
+        ordered_scan = tuple(sorted(scan.items()))
+
+        index_pos45 = next(i for i, (a, _) in enumerate(ordered_scan) if a == 45)
+        index_neg45 = next(i for i, (a, _) in enumerate(ordered_scan) if a == -45)
+
+        score_pos45 = controller.score_heading(ordered_scan, index_pos45, front_distance=50.0)
+        score_neg45 = controller.score_heading(ordered_scan, index_neg45, front_distance=50.0)
+
+        self.assertGreater(score_pos45, score_neg45)
+
+    def test_score_heading_unbiased_with_symmetric_history(self):
+        module = load_autonomous_car_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+        # All EMA values equal -> no bias
+        controller.angle_ema = {-80: 50.0, -45: 50.0, 0: 50.0, 45: 50.0, 80: 50.0}
+
+        scan = {-80: 60.0, -45: 60.0, 0: 60.0, 45: 60.0, 80: 60.0}
+        ordered_scan = tuple(sorted(scan.items()))
+
+        index_pos45 = next(i for i, (a, _) in enumerate(ordered_scan) if a == 45)
+        index_neg45 = next(i for i, (a, _) in enumerate(ordered_scan) if a == -45)
+
+        score_pos45 = controller.score_heading(ordered_scan, index_pos45, front_distance=60.0)
+        score_neg45 = controller.score_heading(ordered_scan, index_neg45, front_distance=60.0)
+
+        self.assertAlmostEqual(score_pos45, score_neg45)
+
 
 if __name__ == "__main__":
     unittest.main()

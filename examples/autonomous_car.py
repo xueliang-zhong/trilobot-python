@@ -65,6 +65,8 @@ class AutonomousCarConfig:
     speed_accel_rate: float = 0.10   # max speed increase per loop cycle
     speed_decel_rate: float = 0.18   # max speed decrease per loop cycle
     open_space_scan_s: float = 1.2   # proactive scan interval when all angles are clear
+    history_alpha: float = 0.25     # EMA smoothing: higher = more reactive to recent scans
+    history_bias_gain: float = 8.0  # score bonus/penalty scale for historical openness
 
 
 @dataclass(frozen=True)
@@ -83,6 +85,7 @@ class AutonomousCarController:
     recent_turns: Deque[int] = field(init=False)
     stuck_escape_times: Deque[float] = field(init=False)
     last_scan: Dict[int, float] = field(default_factory=dict)
+    angle_ema: Dict[int, float] = field(default_factory=dict)
     last_scan_time: float = field(default=-math.inf)
     target_heading: int = field(default=0)
     target_heading_time: float = field(default=-math.inf)
@@ -145,6 +148,13 @@ class AutonomousCarController:
         front_distance = self.last_scan.get(0, 0.0)
         if front_distance > 0.0:
             self.front_history.append(front_distance)
+        alpha = self.config.history_alpha
+        for angle, dist in self.last_scan.items():
+            if dist > 0.0:
+                if angle not in self.angle_ema:
+                    self.angle_ema[angle] = dist
+                else:
+                    self.angle_ema[angle] = alpha * dist + (1.0 - alpha) * self.angle_ema[angle]
 
     def corridor_support(self, ordered_scan: Tuple[Tuple[int, float], ...], index: int) -> Tuple[float, int]:
         neighbours = []
@@ -217,6 +227,12 @@ class AutonomousCarController:
 
         if escape:
             score += abs(angle) * self.config.escape_angle_bias
+
+        if self.angle_ema:
+            mean_ema = sum(self.angle_ema.values()) / len(self.angle_ema)
+            ema_val = self.angle_ema.get(angle, mean_ema)
+            if mean_ema > 0.0:
+                score += (ema_val / mean_ema - 1.0) * self.config.history_bias_gain
 
         return score
 
