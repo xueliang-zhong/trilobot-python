@@ -70,6 +70,7 @@ class Trilobot():
 
     # Speed of sound is 343m/s which we need in cm/ns for our distance measure
     SPEED_OF_SOUND_CM_NS = 343 * 100 / 1E9  # 0.0000343 cm / ns
+    ULTRA_MIN_TRIGGER_INTERVAL_NS = 60_000_000
 
     def __init__(self):
         """ Initialise trilobot's hardware functions
@@ -151,6 +152,9 @@ class Trilobot():
 
         # setup the servo object to None, for later initialisation
         self.servo = None
+
+        # Track the last trigger time so repeated reads do not over-drive the sensor.
+        self._ultra_last_trigger_ns = 0
 
     def cleanup(self):
         """ Explicitly clean up GPIO and underlighting resources.
@@ -540,46 +544,57 @@ class Trilobot():
         """
 
         timeout_ns = timeout * 1000000
-
-        # Start timing
         start_time = time.perf_counter_ns()
-        time_elapsed = 0
+        deadline = start_time + timeout_ns
         count = 0  # Track now many samples taken
         total_pulse_durations = 0
         distance = -999
 
         # Loop until the timeout is exceeded or all samples have been taken
-        while (count < samples) and (time_elapsed < timeout_ns):
+        while count < samples and time.perf_counter_ns() < deadline:
+            now = time.perf_counter_ns()
+            remaining_quiet_time_ns = self.ULTRA_MIN_TRIGGER_INTERVAL_NS - (now - self._ultra_last_trigger_ns)
+            if remaining_quiet_time_ns > 0:
+                sleep_seconds = remaining_quiet_time_ns / 1E9
+                time_left_seconds = (deadline - now) / 1E9
+                if sleep_seconds >= time_left_seconds:
+                    break
+                time.sleep(sleep_seconds)
+
+            # Avoid starting a new measurement while the echo line is still high.
+            while time.perf_counter_ns() < deadline and GPIO.input(self.ULTRA_ECHO_PIN):
+                time.sleep(0.00001)
+            if GPIO.input(self.ULTRA_ECHO_PIN):
+                break
+
             # Trigger
             GPIO.output(self.ULTRA_TRIG_PIN, 0)
             time.sleep(0.00006)
             GPIO.output(self.ULTRA_TRIG_PIN, 1)
             time.sleep(0.00001)  # 10 microseconds
             GPIO.output(self.ULTRA_TRIG_PIN, 0)
+            self._ultra_last_trigger_ns = time.perf_counter_ns()
 
-            sample_start = time.perf_counter_ns()
             pulse_start = None
             pulse_end = None
 
             # Poll rather than use wait_for_edge(), which is unreliable on some Pi setups.
-            while time.perf_counter_ns() - sample_start < timeout_ns:
+            while time.perf_counter_ns() < deadline:
                 now = time.perf_counter_ns()
                 if GPIO.input(self.ULTRA_ECHO_PIN):
                     pulse_start = now
                     break
 
             if pulse_start is None:
-                time_elapsed = time.perf_counter_ns() - start_time
                 continue
 
-            while time.perf_counter_ns() - sample_start < timeout_ns:
+            while time.perf_counter_ns() < deadline:
                 now = time.perf_counter_ns()
                 if not GPIO.input(self.ULTRA_ECHO_PIN):
                     pulse_end = now
                     break
 
             if pulse_end is None:
-                time_elapsed = time.perf_counter_ns() - start_time
                 continue
 
             # get the duration
@@ -592,8 +607,6 @@ class Trilobot():
                 # Convert to distance and add to total
                 total_pulse_durations += pulse_duration
                 count += 1
-
-            time_elapsed = time.perf_counter_ns() - start_time
 
         # Calculate average distance in cm if any successful reading were made
         if count > 0:
