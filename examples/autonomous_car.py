@@ -121,6 +121,14 @@ class AutonomousCarConfig:
     danger_penalty_scale: float = 22.0        # score penalty per unit of danger memory
     danger_score_escape: float = 1.0          # danger recorded per escape/dead-end event
     danger_score_push: float = 0.5            # danger recorded per brave-push attempt
+    follow_target_distance: float = 40.0      # cm to maintain behind followed object
+    follow_deadband: float = 6.0              # ±cm tolerance before correcting
+    follow_max_speed: float = 0.55            # top speed when chasing
+    follow_reverse_speed: float = 0.28        # speed when backing off
+    follow_kp: float = 0.018                  # proportional gain (speed per cm of error)
+    stress_escape_gain: float = 0.25          # stress added per escape / dead-end
+    stress_push_gain: float = 0.10            # stress added per brave push
+    stress_decay: float = 0.998              # per-loop decay (~34s half-life)
 
 
 @dataclass(frozen=True)
@@ -169,6 +177,7 @@ class AutonomousCarController:
     scan_confidence_history: Deque[float] = field(init=False)
     last_push_time: float = field(default=-math.inf)
     danger_heatmap: Dict[int, float] = field(default_factory=dict)
+    stress: float = field(default=0.0)
 
     def __post_init__(self):
         self.front_history = deque(maxlen=self.config.front_history_size)
@@ -359,6 +368,35 @@ class AutonomousCarController:
         if angle == 0:
             return
         self.exploration_memory[angle] = self.exploration_memory.get(angle, 0.0) + 1.0
+
+    def add_stress(self, amount: float):
+        self.stress = min(1.0, self.stress + amount)
+
+    def decay_stress(self):
+        self.stress *= self.config.stress_decay
+        if self.stress < 0.01:
+            self.stress = 0.0
+
+    def plan_follow(self, front_distance: float) -> MotionCommand:
+        """Maintain follow_target_distance from the object directly ahead."""
+        front_distance = self.sanitize_distance(front_distance)
+        target = self.config.follow_target_distance
+        deadband = self.config.follow_deadband
+
+        if front_distance <= 0.0:
+            return MotionCommand(mode="follow_search", left_speed=0.0, right_speed=0.0,
+                                 heading=0, colour=(0, 0, 60))
+
+        error = front_distance - target
+        if abs(error) <= deadband:
+            speed = 0.0
+        elif error > 0:
+            speed = min(self.config.follow_max_speed, error * self.config.follow_kp)
+        else:
+            speed = -self.config.follow_reverse_speed
+
+        return MotionCommand(mode="follow", left_speed=speed, right_speed=speed,
+                             heading=0, colour=(0, 0, 0))
 
     def record_danger(self, angles: list, score: float):
         """Burn a danger score into the heatmap for each given angle."""
@@ -794,6 +832,7 @@ class AutonomousCarController:
         approach_rate = self.track_approach_rate(front_distance, now)
         self.decay_exploration_memory()
         self.decay_danger_heatmap()
+        self.decay_stress()
         heading = self.select_heading(self.last_scan, front_distance, now=now)
 
         if front_distance <= self.config.danger_distance:
@@ -809,6 +848,7 @@ class AutonomousCarController:
             self.path_commitment_heading = 0
             self.path_commitment_time = -math.inf
             self.record_danger([0, heading], self.config.danger_score_escape)
+            self.add_stress(self.config.stress_escape_gain)
             return MotionCommand(
                 mode="escape",
                 left_speed=-self.config.escape_reverse_speed,
@@ -824,6 +864,7 @@ class AutonomousCarController:
             self.last_push_time = now
             self.current_speed = 0.0
             self.record_danger([0], self.config.danger_score_push)
+            self.add_stress(self.config.stress_push_gain)
             return MotionCommand(
                 mode="brave_push",
                 left_speed=self.config.push_speed,
@@ -842,6 +883,7 @@ class AutonomousCarController:
             self.path_commitment_time = -math.inf
             self.stuck_escape_times.append(now)
             self.record_danger([0, -45, 45], self.config.danger_score_escape)
+            self.add_stress(self.config.stress_escape_gain)
             return MotionCommand(
                 mode="escape",
                 left_speed=-self.config.escape_reverse_speed,
@@ -985,6 +1027,19 @@ def _describe_lights(command: MotionCommand, controller: "AutonomousCarControlle
     """Return a compact human-readable description of the current light emotion."""
     cfg = controller.config
 
+    if command.mode == "follow":
+        spd = command.left_speed
+        if spd > 0.01:
+            action = "chasing →"
+        elif spd < -0.01:
+            action = "← backing"
+        else:
+            action = "holding  "
+        return f"feel=tracking | ALL:blue-pulse({action})"
+
+    if command.mode == "follow_search":
+        return "feel=lost     | ALL:dim-blue(searching...)"
+
     if command.mode == "brave_push":
         return "feel=BRAVE   | F:white(headlights!) M:gold(charge!) R:orange(thrust)"
 
@@ -1063,6 +1118,16 @@ def apply_underlighting(tbot, controller: AutonomousCarController, command: Moti
         r, g, b = hsv_to_rgb(h % 1.0, max(0.0, min(1.0, s)), max(0.0, min(1.0, v)))
         return int(r * 255), int(g * 255), int(b * 255)
 
+    if command.mode in ("follow", "follow_search"):
+        # Cool blue pulse — lock-on tracking feel
+        is_searching = command.mode == "follow_search"
+        rate = 1.5 if is_searching else (4.0 if command.left_speed > 0.01 else 2.0)
+        pulse = 0.5 + 0.5 * math.sin(now * rate)
+        base_v = 0.08 if is_searching else 0.25
+        col = _hsv(0.60, 1.0, base_v + 0.55 * pulse)
+        tbot.fill_underlighting(*col)
+        return
+
     if command.mode == "brave_push":
         # Bold charge: warm white front (headlights on full), gold middle, orange rear thrust
         tbot.set_underlight(LIGHT_FRONT_LEFT,  255, 255, 180, show=False)
@@ -1131,12 +1196,21 @@ def apply_underlighting(tbot, controller: AutonomousCarController, command: Moti
     rear_v = 0.05 + 0.55 * speed_ratio + 0.25 * pulse * speed_ratio
     rear = _hsv(0.50 + 0.06 * speed_ratio, 0.95, rear_v)
 
-    tbot.set_underlight(LIGHT_FRONT_LEFT,   *front, show=False)
-    tbot.set_underlight(LIGHT_FRONT_RIGHT,  *front, show=False)
-    tbot.set_underlight(LIGHT_MIDDLE_LEFT,  *mid_l, show=False)
-    tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid_r, show=False)
-    tbot.set_underlight(LIGHT_REAR_LEFT,    *rear,  show=False)
-    tbot.set_underlight(LIGHT_REAR_RIGHT,   *rear,  show=False)
+    # Stress overlay: wash everything toward red as stress rises
+    def _stress(color):
+        r, g, b = color
+        s = controller.stress
+        r = min(255, r + int(s * 120))
+        g = int(g * (1.0 - s * 0.5))
+        b = int(b * (1.0 - s * 0.6))
+        return r, g, b
+
+    tbot.set_underlight(LIGHT_FRONT_LEFT,   *_stress(front), show=False)
+    tbot.set_underlight(LIGHT_FRONT_RIGHT,  *_stress(front), show=False)
+    tbot.set_underlight(LIGHT_MIDDLE_LEFT,  *_stress(mid_l), show=False)
+    tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *_stress(mid_r), show=False)
+    tbot.set_underlight(LIGHT_REAR_LEFT,    *_stress(rear),  show=False)
+    tbot.set_underlight(LIGHT_REAR_RIGHT,   *_stress(rear),  show=False)
     tbot.show_underlighting()
 
 
@@ -1168,6 +1242,10 @@ def apply_command(tbot, controller: AutonomousCarController, command: MotionComm
         controller.last_scan_time = -math.inf
         return
 
+    if command.mode in ("follow", "follow_search"):
+        tbot.set_motor_speeds(command.left_speed, command.right_speed)
+        return
+
     if command.mode == "brave_push":
         tbot.set_motor_speeds(command.left_speed, command.right_speed)
         time.sleep(controller.config.push_duration_s)
@@ -1188,79 +1266,144 @@ def apply_command(tbot, controller: AutonomousCarController, command: MotionComm
     tbot.set_motor_speeds(command.left_speed, command.right_speed)
 
 
+def startup_spin_scan(tbot, controller: AutonomousCarController):
+    """Spin 360° in four 90° steps, scanning at each quadrant.
+    Ends facing the most open direction found."""
+    cfg = controller.config
+    turn_s = 0.46  # estimated time for ~90° turn
+    print("[SPIN] Scanning room at startup...")
+    quad_front: list = []
+
+    for i in range(4):
+        perform_scan(tbot, controller)
+        quad_front.append(controller.sanitize_distance(controller.last_scan.get(0, 0.0)))
+        _print_scan(controller.last_scan)
+        print(f"[HEAT] {controller.format_heatmap()}  (danger memory, █=avoid)")
+        tbot.turn_left(cfg.escape_turn_speed)
+        time.sleep(turn_s)
+        tbot.stop()
+        time.sleep(0.08)
+
+    # Turn to face the most open quadrant
+    best = quad_front.index(max(quad_front))
+    turns_to_best = (1 + best) % 4   # we ended 270° left of start; 1 more turn = 0°
+    print(f"[SPIN] Best heading: quadrant {best} ({best*90}°), front={quad_front[best]:.0f}cm")
+    for _ in range(turns_to_best):
+        tbot.turn_left(cfg.escape_turn_speed)
+        time.sleep(turn_s)
+        tbot.stop()
+        time.sleep(0.08)
+
+    perform_scan(tbot, controller)
+    _print_scan(controller.last_scan)
+    print(f"[HEAT] {controller.format_heatmap()}  (danger memory, █=avoid)")
+    print("[SPIN] Ready — starting navigation.\n")
+
+
 def main():
     from trilobot import BUTTON_A, BUTTON_X, BUTTON_Y, Trilobot
 
-    print("Trilobot Example: Autonomous Car\n")
+    print("Trilobot Example: Autonomous Car")
+    print("  A = toggle follow mode   X = stop   Y = distance_lights\n")
 
     tbot = Trilobot()
     controller = AutonomousCarController(AutonomousCarConfig())
-    prev_mode = ""
     on_inline_line = False
     last_print_time = 0.0
-    print_interval = 0.3   # seconds between drive-line refreshes
+    print_interval = 0.3
     launch_distance_lights = False
+    follow_mode = False
+    btn_a_prev = False
 
     try:
         tbot.initialise_servo()
         tbot.set_servo_angle(0)
         time.sleep(0.25)
-        perform_scan(tbot, controller)
-        _print_scan(controller.last_scan)
-        print(f"[HEAT] {controller.format_heatmap()}  (danger memory, █=avoid)")
+        startup_spin_scan(tbot, controller)
 
-        while not tbot.read_button(BUTTON_A) and not tbot.read_button(BUTTON_X):
+        while not tbot.read_button(BUTTON_X):
+            # Button A: toggle follow mode (debounced)
+            btn_a_now = tbot.read_button(BUTTON_A)
+            if btn_a_now and not btn_a_prev:
+                follow_mode = not follow_mode
+                if on_inline_line:
+                    print()
+                    on_inline_line = False
+                label = "FOLLOW mode ON  (A again to return)" if follow_mode else "AUTONOMOUS mode"
+                print(f"[A] {label}")
+            btn_a_prev = btn_a_now
+
             if tbot.read_button(BUTTON_Y):
                 launch_distance_lights = True
                 break
+
             now = time.monotonic()
             front_distance = tbot.read_distance(
                 timeout=controller.config.front_timeout_ms,
                 samples=controller.config.front_samples,
             )
 
-            if controller.last_scan:
-                controller.last_scan[0] = controller.sanitize_distance(front_distance)
-
-            if controller.should_scan(front_distance, now):
-                perform_scan(tbot, controller)
-                front_distance = controller.last_scan.get(0, front_distance)
-                if on_inline_line:
-                    print()
-                    on_inline_line = False
-                _print_scan(controller.last_scan)
-                print(f"[HEAT] {controller.format_heatmap()}  (danger memory, █=avoid)")
-
-            command = controller.plan(front_distance, now)
-
-            emotion = _describe_lights(command, controller, front_distance)
-            if command.mode == "brave_push":
-                if on_inline_line:
-                    print()
-                    on_inline_line = False
-                print(f"[PUSH!]    front={front_distance:.0f}cm  → charging obstacle!  | {emotion}")
-            elif command.mode == "escape":
-                if on_inline_line:
-                    print()
-                    on_inline_line = False
-                esc_lvl = controller.get_escape_escalation_level(now)
-                side = "L" if command.heading < 0 else "R"
-                print(f"[ESCAPE]   front={front_distance:.0f}cm  turn={side}  lvl={esc_lvl}  | {emotion}")
-            elif command.mode == "dead_end_recovery":
-                if on_inline_line:
-                    print()
-                    on_inline_line = False
-                side = "L" if command.heading < 0 else "R"
-                print(f"[DEAD END] front={front_distance:.0f}cm  turn={side}  | {emotion}")
-            else:
+            if follow_mode:
+                command = controller.plan_follow(front_distance)
+                emotion = _describe_lights(command, controller, front_distance)
                 if now - last_print_time >= print_interval:
-                    arrow = "←" if command.heading < -10 else ("→" if command.heading > 10 else "↑")
-                    print(f"\r[DRIVE] {arrow}  front={front_distance:5.1f}cm  hdg={command.heading:+4d}  spd={controller.current_speed:.2f}  | {emotion}   ", end='', flush=True)
+                    fd_str = f"{front_distance:.0f}cm" if front_distance > 0 else " ---"
+                    err = front_distance - controller.config.follow_target_distance if front_distance > 0 else 0.0
+                    if command.left_speed > 0.01:
+                        action = "chasing →"
+                    elif command.left_speed < -0.01:
+                        action = "← backing"
+                    else:
+                        action = "holding  "
+                    stress_ch = ' ░▒▓█'[min(4, int(controller.stress * 5))]
+                    print(f"\r[FOLLOW] front={fd_str}  err={err:+.0f}cm  {action}  stress={stress_ch}  | {emotion}   ", end='', flush=True)
                     on_inline_line = True
                     last_print_time = now
+                apply_command(tbot, controller, command, now)
+            else:
+                if controller.last_scan:
+                    controller.last_scan[0] = controller.sanitize_distance(front_distance)
 
-            prev_mode = command.mode
-            apply_command(tbot, controller, command, now)
+                if controller.should_scan(front_distance, now):
+                    perform_scan(tbot, controller)
+                    front_distance = controller.last_scan.get(0, front_distance)
+                    if on_inline_line:
+                        print()
+                        on_inline_line = False
+                    _print_scan(controller.last_scan)
+                    print(f"[HEAT] {controller.format_heatmap()}  (danger memory, █=avoid)")
+
+                command = controller.plan(front_distance, now)
+                emotion = _describe_lights(command, controller, front_distance)
+                stress_ch = ' ░▒▓█'[min(4, int(controller.stress * 5))]
+
+                if command.mode == "brave_push":
+                    if on_inline_line:
+                        print()
+                        on_inline_line = False
+                    print(f"[PUSH!]    front={front_distance:.0f}cm  → charging!  stress={stress_ch}  | {emotion}")
+                elif command.mode == "escape":
+                    if on_inline_line:
+                        print()
+                        on_inline_line = False
+                    esc_lvl = controller.get_escape_escalation_level(now)
+                    side = "L" if command.heading < 0 else "R"
+                    print(f"[ESCAPE]   front={front_distance:.0f}cm  turn={side}  lvl={esc_lvl}  stress={stress_ch}  | {emotion}")
+                elif command.mode == "dead_end_recovery":
+                    if on_inline_line:
+                        print()
+                        on_inline_line = False
+                    side = "L" if command.heading < 0 else "R"
+                    print(f"[DEAD END] front={front_distance:.0f}cm  turn={side}  stress={stress_ch}  | {emotion}")
+                else:
+                    if now - last_print_time >= print_interval:
+                        arrow = "←" if command.heading < -10 else ("→" if command.heading > 10 else "↑")
+                        print(f"\r[DRIVE] {arrow}  front={front_distance:5.1f}cm  hdg={command.heading:+4d}  spd={controller.current_speed:.2f}  stress={stress_ch}  | {emotion}   ", end='', flush=True)
+                        on_inline_line = True
+                        last_print_time = now
+
+                apply_command(tbot, controller, command, now)
+
             time.sleep(controller.config.loop_delay_s)
     finally:
         tbot.stop()
