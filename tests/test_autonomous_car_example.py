@@ -350,6 +350,45 @@ class AutonomousCarExampleTests(unittest.TestCase):
         self.assertNotEqual(straight_colour, caution_colour)
         self.assertEqual(escape_colour, (255, 48, 0))
 
+    def test_plan_triggers_peek_pounce_toward_clear_side(self):
+        module = load_autonomous_car_module()
+        config = module.AutonomousCarConfig(
+            speed_accel_rate=1.0,
+            speed_decel_rate=1.0,
+        )
+        controller = module.AutonomousCarController(config)
+        now = 50.0
+        controller.last_scan = {-80: 22.0, -45: 30.0, 0: 26.0, 45: 98.0, 80: 94.0}
+        controller.last_scan_time = now - 0.1
+
+        command = controller.plan(front_distance=26.0, now=now)
+
+        self.assertEqual(command.mode, "peek_pounce")
+        self.assertEqual(command.heading, 45)
+        self.assertGreater(command.left_speed, command.right_speed)
+        self.assertAlmostEqual(controller.pounce_heading, 45)
+        self.assertGreater(controller.pounce_until, now)
+
+    def test_plan_keeps_committed_pounce_heading_until_window_expires(self):
+        module = load_autonomous_car_module()
+        config = module.AutonomousCarConfig(
+            speed_accel_rate=1.0,
+            speed_decel_rate=1.0,
+        )
+        controller = module.AutonomousCarController(config)
+        now = 80.0
+        controller.last_scan = {-80: 22.0, -45: 30.0, 0: 26.0, 45: 98.0, 80: 94.0}
+        controller.last_scan_time = now - 0.1
+
+        first = controller.plan(front_distance=26.0, now=now)
+        self.assertEqual(first.mode, "peek_pounce")
+
+        controller.last_scan = {-80: 94.0, -45: 98.0, 0: 26.0, 45: 30.0, 80: 22.0}
+        second = controller.plan(front_distance=26.0, now=now + config.pounce_commit_s / 2.0)
+
+        self.assertEqual(second.mode, "peek_pounce")
+        self.assertEqual(second.heading, 45)
+        self.assertGreater(second.left_speed, second.right_speed)
 
     def test_side_correction_nudges_away_from_left_wall(self):
         module = load_autonomous_car_module()

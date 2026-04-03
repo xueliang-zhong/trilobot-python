@@ -129,6 +129,12 @@ class AutonomousCarConfig:
     stress_escape_gain: float = 0.25          # stress added per escape / dead-end
     stress_push_gain: float = 0.10            # stress added per brave push
     stress_decay: float = 0.998              # per-loop decay (~34s half-life)
+    pounce_trigger_distance: float = 32.0     # max front distance to arm a predatory lane-change burst
+    pounce_min_clearance_gain: float = 24.0   # minimum extra side clearance required to trigger a pounce
+    pounce_min_heading: int = 30              # only commit to decisive side headings
+    pounce_speed: float = 0.92                # burst speed during peek-and-pounce
+    pounce_commit_s: float = 0.55             # how long to hold the chosen burst heading
+    pounce_steer_gain: float = 1.35           # stronger steering than normal drive mode
 
 
 @dataclass(frozen=True)
@@ -178,6 +184,8 @@ class AutonomousCarController:
     last_push_time: float = field(default=-math.inf)
     danger_heatmap: Dict[int, float] = field(default_factory=dict)
     stress: float = field(default=0.0)
+    pounce_heading: int = field(default=0)
+    pounce_until: float = field(default=-math.inf)
 
     def __post_init__(self):
         self.front_history = deque(maxlen=self.config.front_history_size)
@@ -397,6 +405,56 @@ class AutonomousCarController:
 
         return MotionCommand(mode="follow", left_speed=speed, right_speed=speed,
                              heading=0, colour=(0, 0, 0))
+
+    def clear_pounce_commitment(self):
+        self.pounce_heading = 0
+        self.pounce_until = -math.inf
+
+    def should_trigger_pounce(self, front_distance: float, heading: int) -> bool:
+        front_distance = self.sanitize_distance(front_distance)
+        if front_distance <= self.config.danger_distance:
+            return False
+        if front_distance > self.config.pounce_trigger_distance:
+            return False
+        if abs(heading) < self.config.pounce_min_heading:
+            return False
+
+        target_distance = self.sanitize_distance(self.last_scan.get(heading, 0.0))
+        if target_distance <= 0.0:
+            return False
+
+        if target_distance - front_distance < self.config.pounce_min_clearance_gain:
+            return False
+
+        opposite_angle = -45 if heading > 0 else 45
+        opposite_distance = self.sanitize_distance(self.last_scan.get(opposite_angle, 0.0))
+        if opposite_distance > 0.0 and target_distance <= opposite_distance + 10.0:
+            return False
+
+        return True
+
+    def build_pounce_command(self, heading: int, front_distance: float, now: float) -> MotionCommand:
+        max_angle = max(abs(angle) for angle in self.config.scan_angles) or 1
+        steer = max(-1.0, min(1.0, heading / max_angle))
+        steer *= self.config.pounce_steer_gain
+        steer = max(-1.0, min(1.0, steer))
+        speed = self.config.pounce_speed
+        self.current_speed = speed
+        self.current_heading = heading
+        self.path_commitment_heading = heading
+        self.path_commitment_time = now
+        self.record_heading_choice(heading)
+        self.record_distance(speed, self.config.loop_delay_s)
+
+        left_speed = max(-1.0, min(1.0, speed * (1.0 + steer * self.config.steer_gain)))
+        right_speed = max(-1.0, min(1.0, speed * (1.0 - steer * self.config.steer_gain)))
+        return MotionCommand(
+            mode="peek_pounce",
+            left_speed=left_speed,
+            right_speed=right_speed,
+            heading=heading,
+            colour=self.motion_colour_for("peek_pounce", heading, speed, front_distance),
+        )
 
     def record_danger(self, angles: list, score: float):
         """Burn a danger score into the heatmap for each given angle."""
@@ -635,6 +693,8 @@ class AutonomousCarController:
             return (255, 48, 0)
         if mode == "dead_end_recovery":
             return (255, 128, 0)
+        if mode == "peek_pounce":
+            return (255, 72, 0)
         if mode != "drive":
             return (32, 32, 40)
 
@@ -836,6 +896,7 @@ class AutonomousCarController:
         heading = self.select_heading(self.last_scan, front_distance, now=now)
 
         if front_distance <= self.config.danger_distance:
+            self.clear_pounce_commitment()
             self.current_speed = 0.0
             self.escalate_escape(now)
             escalation = self.get_escape_escalation_level(now)
@@ -861,6 +922,7 @@ class AutonomousCarController:
         # might be movable — charge it with decisive force before giving up.
         if (self.is_pushable_obstacle(front_distance)
                 and now - self.last_push_time >= self.config.push_cooldown_s):
+            self.clear_pounce_commitment()
             self.last_push_time = now
             self.current_speed = 0.0
             self.record_danger([0], self.config.danger_score_push)
@@ -875,6 +937,7 @@ class AutonomousCarController:
 
         # Only re-trigger dead-end escape after a cooldown so the maneuver can complete
         if self.is_dead_end(front_distance) and now - self.dead_end_recovery_time >= 3.0:
+            self.clear_pounce_commitment()
             self.dead_end_recovery_time = now
             self.escalate_escape(now)
             heading = -80 if sum(self.recent_turns) >= 0 else 80
@@ -893,6 +956,7 @@ class AutonomousCarController:
             )
 
         if now - self.dead_end_recovery_time < 1.5:
+            self.clear_pounce_commitment()
             recovery_progress = (now - self.dead_end_recovery_time) / 1.5
             # Start at 60% speed immediately — no hesitant ramp-up
             turn_speed = self.config.escape_turn_speed * max(0.6, min(1.0, recovery_progress * 2.0))
@@ -911,6 +975,15 @@ class AutonomousCarController:
                 heading=heading,
                 colour=self.motion_colour_for("dead_end_recovery", heading, 0.0, front_distance),
             )
+
+        if self.pounce_heading != 0 and now < self.pounce_until:
+            return self.build_pounce_command(self.pounce_heading, front_distance, now)
+        self.clear_pounce_commitment()
+
+        if self.should_trigger_pounce(front_distance, heading):
+            self.pounce_heading = heading
+            self.pounce_until = now + self.config.pounce_commit_s
+            return self.build_pounce_command(heading, front_distance, now)
 
         if now - self.path_commitment_time > self.config.path_commitment_s:
             self.path_commitment_heading = heading
@@ -1040,6 +1113,9 @@ def _describe_lights(command: MotionCommand, controller: "AutonomousCarControlle
     if command.mode == "follow_search":
         return "feel=lost     | ALL:dim-blue(searching...)"
 
+    if command.mode == "peek_pounce":
+        return "feel=locked-on | F:amber(lock) M:red(lean) R:white(thrust)"
+
     if command.mode == "brave_push":
         return "feel=BRAVE   | F:white(headlights!) M:gold(charge!) R:orange(thrust)"
 
@@ -1106,11 +1182,14 @@ def perform_scan(tbot, controller: AutonomousCarController) -> Dict[int, float]:
 
 def apply_underlighting(tbot, controller: AutonomousCarController, command: MotionCommand, now: float):
     """Express the car's emotional state through per-LED underlighting."""
-    from trilobot import (
-        LIGHT_FRONT_LEFT, LIGHT_FRONT_RIGHT,
-        LIGHT_MIDDLE_LEFT, LIGHT_MIDDLE_RIGHT,
-        LIGHT_REAR_LEFT, LIGHT_REAR_RIGHT,
-    )
+    try:
+        from trilobot import (
+            LIGHT_FRONT_LEFT, LIGHT_FRONT_RIGHT,
+            LIGHT_MIDDLE_LEFT, LIGHT_MIDDLE_RIGHT,
+            LIGHT_REAR_LEFT, LIGHT_REAR_RIGHT,
+        )
+    except ModuleNotFoundError:
+        return
 
     cfg = controller.config
 
@@ -1126,6 +1205,20 @@ def apply_underlighting(tbot, controller: AutonomousCarController, command: Moti
         base_v = 0.08 if is_searching else 0.25
         col = _hsv(0.60, 1.0, base_v + 0.55 * pulse)
         tbot.fill_underlighting(*col)
+        return
+
+    if command.mode == "peek_pounce":
+        pulse = 0.5 + 0.5 * math.sin(now * 10.0)
+        front = (255, 140, 0)
+        middle = (255, int(40 + 90 * pulse), 0)
+        rear = (255, 255, int(120 + 90 * pulse))
+        tbot.set_underlight(LIGHT_FRONT_LEFT, *front, show=False)
+        tbot.set_underlight(LIGHT_FRONT_RIGHT, *front, show=False)
+        tbot.set_underlight(LIGHT_MIDDLE_LEFT, *middle, show=False)
+        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *middle, show=False)
+        tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
+        tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
+        tbot.show_underlighting()
         return
 
     if command.mode == "brave_push":
@@ -1214,7 +1307,9 @@ def apply_underlighting(tbot, controller: AutonomousCarController, command: Moti
     tbot.show_underlighting()
 
 
-def apply_command(tbot, controller: AutonomousCarController, command: MotionCommand, now: float):
+def apply_command(tbot, controller: AutonomousCarController, command: MotionCommand, now: float | None = None):
+    if now is None:
+        now = time.monotonic()
     apply_underlighting(tbot, controller, command, now)
 
     if command.mode == "escape":
@@ -1242,7 +1337,7 @@ def apply_command(tbot, controller: AutonomousCarController, command: MotionComm
         controller.last_scan_time = -math.inf
         return
 
-    if command.mode in ("follow", "follow_search"):
+    if command.mode in ("follow", "follow_search", "peek_pounce"):
         tbot.set_motor_speeds(command.left_speed, command.right_speed)
         return
 
@@ -1382,6 +1477,12 @@ def main():
                         print()
                         on_inline_line = False
                     print(f"[PUSH!]    front={front_distance:.0f}cm  → charging!  stress={stress_ch}  | {emotion}")
+                elif command.mode == "peek_pounce":
+                    if on_inline_line:
+                        print()
+                        on_inline_line = False
+                    side = "L" if command.heading < 0 else "R"
+                    print(f"[POUNCE]   front={front_distance:.0f}cm  side={side}  burst={controller.config.pounce_speed:.2f}  stress={stress_ch}  | {emotion}")
                 elif command.mode == "escape":
                     if on_inline_line:
                         print()
