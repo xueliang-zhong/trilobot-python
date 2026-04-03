@@ -913,6 +913,56 @@ def _print_scan(scan: Dict[int, float]):
     print(f"[SCAN] {parts} cm")
 
 
+def _describe_lights(command: MotionCommand, controller: "AutonomousCarController", front_distance: float) -> str:
+    """Return a compact human-readable description of the current light emotion."""
+    cfg = controller.config
+
+    if command.mode == "escape":
+        return "feel=PANIC  | F:RED(danger!) M:dim  R:AMBER(alarm)"
+
+    if command.mode == "dead_end_recovery":
+        return "feel=TRAPPED | ALL:magenta-pulse(panic spin)"
+
+    # Front LEDs: distance emotion
+    if front_distance <= 0.0 or front_distance <= cfg.danger_distance:
+        front_label = "RED(danger!)"
+        feeling = "scared"
+    elif front_distance <= cfg.caution_distance:
+        front_label = f"amber({front_distance:.0f}cm caution)"
+        feeling = "alert"
+    elif front_distance <= cfg.cruise_distance:
+        front_label = f"green({front_distance:.0f}cm clear)"
+        feeling = "content"
+    else:
+        front_label = f"teal({front_distance:.0f}cm open!)"
+        feeling = "confident"
+
+    # Middle LEDs: steering/direction emotion
+    if command.heading < -10:
+        mid_label = "orange(turning-L)"
+        if feeling in ("content", "confident"):
+            feeling = "curious"
+    elif command.heading > 10:
+        mid_label = "blue(turning-R)"
+        if feeling in ("content", "confident"):
+            feeling = "curious"
+    else:
+        mid_label = "green(straight)"
+
+    # Rear LEDs: speed/energy
+    spd = controller.current_speed
+    if spd < 0.30:
+        rear_label = "dim(slow)"
+    elif spd < cfg.cruise_speed:
+        rear_label = "teal(cruising)"
+    else:
+        rear_label = "bright-teal(fast!)"
+        if feeling == "confident":
+            feeling = "joyful!"
+
+    return f"feel={feeling:<9} | F:{front_label:<22} M:{mid_label:<18} R:{rear_label}"
+
+
 def perform_scan(tbot, controller: AutonomousCarController) -> Dict[int, float]:
     scan = {}
     for angle in controller.config.scan_angles:
@@ -1086,22 +1136,23 @@ def main():
 
             command = controller.plan(front_distance, now)
 
+            emotion = _describe_lights(command, controller, front_distance)
             if command.mode == "escape":
                 if on_inline_line:
                     print()
                     on_inline_line = False
                 esc_lvl = controller.get_escape_escalation_level(now)
                 side = "L" if command.heading < 0 else "R"
-                print(f"[ESCAPE]   front={front_distance:.0f}cm  turn={side}  lvl={esc_lvl}")
+                print(f"[ESCAPE]   front={front_distance:.0f}cm  turn={side}  lvl={esc_lvl}  | {emotion}")
             elif command.mode == "dead_end_recovery":
                 if on_inline_line:
                     print()
                     on_inline_line = False
                 side = "L" if command.heading < 0 else "R"
-                print(f"[DEAD END] front={front_distance:.0f}cm  turn={side}")
+                print(f"[DEAD END] front={front_distance:.0f}cm  turn={side}  | {emotion}")
             else:
                 arrow = "←" if command.heading < -10 else ("→" if command.heading > 10 else "↑")
-                print(f"\r[DRIVE] {arrow}  front={front_distance:5.1f}cm  hdg={command.heading:+4d}  spd={controller.current_speed:.2f}  ", end='', flush=True)
+                print(f"\r[DRIVE] {arrow}  front={front_distance:5.1f}cm  hdg={command.heading:+4d}  spd={controller.current_speed:.2f}  | {emotion}   ", end='', flush=True)
                 on_inline_line = True
 
             prev_mode = command.mode
