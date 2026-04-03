@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import math
 import time
+from colorsys import hsv_to_rgb
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Deque, Dict, Tuple
@@ -78,6 +79,7 @@ class AutonomousCarConfig:
     wall_following_threshold: float = 45.0  # max distance to both sides to trigger wall-following
     exploration_decay: float = 0.92       # decay factor for exploration memory per loop cycle
     exploration_penalty_scale: float = 12.0  # score penalty scale for recently chosen angles
+    exploration_spread_degrees: float = 35.0  # angular radius over which recent headings suppress nearby choices
     per_angle_rate_window: int = 3        # samples for per-angle approach rate tracking
     spatial_memory_cells: int = 5          # number of angular sectors in spatial memory
     spatial_memory_decay: float = 0.97     # decay rate for spatial memory per loop cycle
@@ -322,12 +324,25 @@ class AutonomousCarController:
         return self.config.target_heading_bias * age_ratio * angle_ratio
 
     def exploration_penalty(self, angle: int) -> float:
+        if not self.exploration_memory:
+            return 0.0
+
+        spread = max(1.0, self.config.exploration_spread_degrees)
+        penalty = 0.0
+        for past_angle, visits in self.exploration_memory.items():
+            angle_gap = abs(angle - past_angle)
+            if angle_gap > spread:
+                continue
+            proximity = 1.0 - (angle_gap / spread)
+            penalty += visits * proximity
+        return -penalty * self.config.exploration_penalty_scale
+
+    def decay_exploration_memory(self):
         decay = self.config.exploration_decay
-        for a in list(self.exploration_memory.keys()):
-            self.exploration_memory[a] *= decay
-            if self.exploration_memory[a] < 0.05:
-                del self.exploration_memory[a]
-        return -self.exploration_memory.get(angle, 0.0) * self.config.exploration_penalty_scale
+        for angle in list(self.exploration_memory.keys()):
+            self.exploration_memory[angle] *= decay
+            if self.exploration_memory[angle] < 0.05:
+                del self.exploration_memory[angle]
 
     def record_heading_choice(self, angle: int):
         if angle == 0:
@@ -528,6 +543,66 @@ class AutonomousCarController:
             return 0.0
         return (left_dist - right_dist) / total * self.config.gap_centering_gain
 
+    def clamp_colour_channel(self, value: float) -> int:
+        return max(0, min(255, int(round(value))))
+
+    def motion_colour_for(self, mode: str, heading: int, speed: float, front_distance: float) -> Colour:
+        if mode == "escape":
+            return (255, 48, 0)
+        if mode == "dead_end_recovery":
+            return (255, 128, 0)
+        if mode != "drive":
+            return (32, 32, 40)
+
+        max_angle = max(abs(angle) for angle in self.config.scan_angles) or 1
+        normalized_heading = max(-1.0, min(1.0, heading / max_angle))
+        speed_ratio = max(0.0, min(1.0, speed / max(self.config.open_space_speed, 0.01)))
+        if front_distance > 0.0:
+            openness = max(
+                0.0,
+                min(
+                    1.0,
+                    (front_distance - self.config.caution_distance)
+                    / max(1.0, self.config.open_space_distance - self.config.caution_distance),
+                ),
+            )
+        else:
+            openness = 0.0
+        scan_roughness = 0.0
+        if self.scan_confidence_history:
+            scan_roughness = sum(self.scan_confidence_history) / len(self.scan_confidence_history)
+        certainty = max(0.0, min(1.0, 1.0 - scan_roughness))
+
+        if front_distance <= self.config.danger_distance:
+            hue = 0.02
+            saturation = 1.0
+            value = 1.0
+        elif front_distance <= self.config.caution_distance:
+            hue = 0.08
+            saturation = 1.0
+            value = 0.65 + 0.25 * speed_ratio
+        else:
+            if normalized_heading < -0.15:
+                warm_mix = min(1.0, (-normalized_heading - 0.15) / 0.85)
+                hue = 0.03 + 0.06 * warm_mix
+            elif normalized_heading > 0.15:
+                cool_mix = min(1.0, (normalized_heading - 0.15) / 0.85)
+                hue = 0.54 + 0.08 * cool_mix
+            else:
+                hue = 0.30 + normalized_heading * 0.08
+            saturation = 0.70 + 0.20 * speed_ratio + 0.05 * certainty
+            value = 0.45 + 0.25 * speed_ratio + 0.20 * openness + 0.10 * certainty
+
+        hue = max(0.0, min(1.0, hue))
+        saturation = max(0.0, min(1.0, saturation))
+        value = max(0.0, min(1.0, value))
+        red, green, blue = hsv_to_rgb(hue, saturation, value)
+        return (
+            self.clamp_colour_channel(red * 255.0),
+            self.clamp_colour_channel(green * 255.0),
+            self.clamp_colour_channel(blue * 255.0),
+        )
+
     def apply_gap_entry_slowdown(self, speed: float, front_distance: float, left_side: float, right_side: float) -> float:
         if front_distance > self.config.gap_entry_distance:
             return speed
@@ -667,6 +742,7 @@ class AutonomousCarController:
     def plan(self, front_distance: float, now: float) -> MotionCommand:
         front_distance = self.observe_front(front_distance)
         approach_rate = self.track_approach_rate(front_distance, now)
+        self.decay_exploration_memory()
         heading = self.select_heading(self.last_scan, front_distance, now=now)
 
         if front_distance <= self.config.danger_distance:
@@ -686,7 +762,7 @@ class AutonomousCarController:
                 left_speed=-self.config.escape_reverse_speed,
                 right_speed=-self.config.escape_reverse_speed,
                 heading=heading,
-                colour=(255, 48, 0),
+                colour=self.motion_colour_for("escape", heading, 0.0, front_distance),
             )
 
         if self.is_dead_end(front_distance):
@@ -701,7 +777,7 @@ class AutonomousCarController:
                 left_speed=-self.config.escape_reverse_speed * 0.6,
                 right_speed=-self.config.escape_reverse_speed * 0.6,
                 heading=heading,
-                colour=(255, 128, 0),
+                colour=self.motion_colour_for("dead_end_recovery", heading, 0.0, front_distance),
             )
 
         if now - self.dead_end_recovery_time < 1.5:
@@ -720,7 +796,7 @@ class AutonomousCarController:
                 left_speed=left_s,
                 right_speed=right_s,
                 heading=heading,
-                colour=(255, 128, 0),
+                colour=self.motion_colour_for("dead_end_recovery", heading, 0.0, front_distance),
             )
 
         if now - self.path_commitment_time > self.config.path_commitment_s:
@@ -813,9 +889,7 @@ class AutonomousCarController:
         left_speed = max(-1.0, min(1.0, speed * (1.0 + steer * self.config.steer_gain)))
         right_speed = max(-1.0, min(1.0, speed * (1.0 - steer * self.config.steer_gain)))
 
-        colour = (32, 160, 255) if abs(effective_heading) >= 45 else (0, 255, 64)
-        if front_distance <= self.config.caution_distance:
-            colour = (255, 180, 0)
+        colour = self.motion_colour_for("drive", int(round(effective_heading)), speed, front_distance)
 
         self.remember_heading(heading, front_distance, now)
         self.current_heading = heading

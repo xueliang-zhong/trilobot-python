@@ -319,6 +319,37 @@ class AutonomousCarExampleTests(unittest.TestCase):
 
         self.assertAlmostEqual(score_pos45, score_neg45)
 
+    def test_exploration_penalty_spreads_to_nearby_headings_without_mutating_memory(self):
+        module = load_autonomous_car_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+        controller.exploration_memory = {45: 1.0}
+
+        exact_penalty = controller.exploration_penalty(45)
+        nearby_penalty = controller.exploration_penalty(62)
+
+        self.assertEqual(controller.exploration_memory, {45: 1.0})
+        self.assertLess(exact_penalty, nearby_penalty)
+        self.assertLess(nearby_penalty, 0.0)
+
+    def test_motion_colour_reflects_heading_and_drive_state(self):
+        module = load_autonomous_car_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+
+        left_colour = controller.motion_colour_for("drive", heading=-45, speed=0.6, front_distance=80.0)
+        straight_colour = controller.motion_colour_for("drive", heading=0, speed=0.6, front_distance=80.0)
+        right_colour = controller.motion_colour_for("drive", heading=45, speed=0.6, front_distance=80.0)
+        caution_colour = controller.motion_colour_for("drive", heading=0, speed=0.2, front_distance=10.0)
+        escape_colour = controller.motion_colour_for("escape", heading=-80, speed=0.0, front_distance=8.0)
+
+        self.assertGreater(left_colour[0], left_colour[1])
+        self.assertGreater(left_colour[0], left_colour[2])
+        self.assertGreater(straight_colour[1], straight_colour[0])
+        self.assertGreater(straight_colour[1], straight_colour[2])
+        self.assertGreater(right_colour[2], right_colour[0])
+        self.assertGreater(right_colour[2], right_colour[1])
+        self.assertNotEqual(straight_colour, caution_colour)
+        self.assertEqual(escape_colour, (255, 48, 0))
+
 
     def test_side_correction_nudges_away_from_left_wall(self):
         module = load_autonomous_car_module()
