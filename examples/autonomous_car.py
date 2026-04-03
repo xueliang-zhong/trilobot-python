@@ -295,6 +295,9 @@ class AutonomousCarController:
         combined.sort(key=lambda x: x[0])
         return tuple(combined)
 
+    def should_use_gap_headings(self, front_distance: float) -> bool:
+        return self.config.caution_distance <= front_distance < self.config.cruise_distance
+
     def gap_bonus_for_angle(self, angle: int, ordered_scan: Tuple[Tuple[int, float], ...]) -> float:
         if not self.config.gap_interpolation or len(ordered_scan) < 2:
             return 0.0
@@ -443,17 +446,25 @@ class AutonomousCarController:
         return False
 
     def apply_boredom_exploration(self, scan: Dict[int, float], current_heading: int) -> int:
-        best_angle = current_heading
-        best_frontier = -1.0
-        for angle, dist in scan.items():
-            if dist <= 0.0:
-                continue
-            cell = self.angle_to_cell(angle)
-            frontier_val = self.frontier_map.get(cell, 0.5)
-            if frontier_val > best_frontier and abs(angle - current_heading) > 30:
-                best_frontier = frontier_val
-                best_angle = angle
-        return best_angle
+        if not scan:
+            return current_heading
+
+        ordered_scan = tuple(
+            (angle, self.sanitize_distance(distance))
+            for angle, distance in sorted(scan.items())
+        )
+        candidate_scan = self.build_gap_headings(ordered_scan)
+        positive_distances = [distance for _, distance in candidate_scan if distance > 0.0]
+        if not positive_distances:
+            return current_heading
+
+        best_angle = self._choose_best_heading(
+            candidate_scan,
+            front_distance=max(positive_distances),
+            now=None,
+            escape=False,
+        )
+        return best_angle if best_angle != 0 else current_heading
 
     def smooth_heading(self, raw_heading: int) -> float:
         if not self.heading_initialized:
@@ -607,16 +618,13 @@ class AutonomousCarController:
 
         return score
 
-    def select_heading(self, scan: Dict[int, float], front_distance: float, now: float | None = None, escape: bool = False) -> int:
-        if not scan:
-            return 0
-
-        front_distance = self.sanitize_distance(front_distance)
-        ordered_scan = tuple(
-            (angle, self.sanitize_distance(distance))
-            for angle, distance in sorted(scan.items())
-        )
-
+    def _choose_best_heading(
+        self,
+        ordered_scan: Tuple[Tuple[int, float], ...],
+        front_distance: float,
+        now: float | None = None,
+        escape: bool = False,
+    ) -> int:
         best_angle = 0
         best_score = -math.inf
 
@@ -637,6 +645,18 @@ class AutonomousCarController:
                 best_angle = angle
 
         return best_angle
+
+    def select_heading(self, scan: Dict[int, float], front_distance: float, now: float | None = None, escape: bool = False) -> int:
+        if not scan:
+            return 0
+
+        front_distance = self.sanitize_distance(front_distance)
+        ordered_scan = tuple(
+            (angle, self.sanitize_distance(distance))
+            for angle, distance in sorted(scan.items())
+        )
+        candidate_scan = self.build_gap_headings(ordered_scan) if self.should_use_gap_headings(front_distance) else ordered_scan
+        return self._choose_best_heading(candidate_scan, front_distance, now=now, escape=escape)
 
     def remember_heading(self, heading: int, front_distance: float, now: float):
         if front_distance <= self.config.caution_distance or abs(heading) < 30:

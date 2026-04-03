@@ -1,0 +1,1 @@
+* Always-on gap interpolation in `examples/autonomous_car.py` overpowered the existing blocked/open-space heuristics and changed many stable route choices; keep gap candidates gated to the moderate-front-distance band.

@@ -22,6 +22,7 @@
 - Ultrasonic HC-SR04 needs 60 ms min trigger interval; added to `trilobot/__init__.py`
 - pigpiod servo warnings on Pi are cosmetic, code still runs
 - Tests use `python -m unittest` (pytest not installed in Pi environment)
+- Gap interpolation only helps if it is gated to moderate front distances; enabling it unconditionally can override stable blocked/open-space heading choices and break existing turn selection.
 
 ## Pi access
 - SSH: `ssh hayley@192.168.0.49`

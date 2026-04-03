@@ -56,6 +56,28 @@ class AutonomousCarExampleTests(unittest.TestCase):
 
         self.assertEqual(heading, 45)
 
+    def test_select_heading_prefers_interpolated_gap_heading_in_wide_opening(self):
+        module = load_autonomous_car_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+
+        heading = controller.select_heading(
+            scan={-80: 20.0, -45: 25.0, 0: 40.0, 45: 90.0, 80: 88.0},
+            front_distance=40.0,
+        )
+
+        self.assertEqual(heading, 62)
+
+    def test_boredom_exploration_can_choose_interpolated_gap_heading(self):
+        module = load_autonomous_car_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+
+        heading = controller.apply_boredom_exploration(
+            scan={-80: 20.0, -45: 25.0, 0: 40.0, 45: 90.0, 80: 88.0},
+            current_heading=0,
+        )
+
+        self.assertEqual(heading, 62)
+
     def test_plan_requests_escape_when_path_is_dangerously_close(self):
         module = load_autonomous_car_module()
         controller = module.AutonomousCarController(module.AutonomousCarConfig())
