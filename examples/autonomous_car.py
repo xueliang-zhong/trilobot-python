@@ -89,6 +89,10 @@ class AutonomousCarConfig:
     dead_end_front_threshold: float = 35.0  # max front distance to trigger dead end check
     dead_end_side_threshold: float = 40.0   # max side distance to confirm dead end
     dead_end_recovery_turn_s: float = 0.45  # duration of dead end recovery turn
+    push_min_side: float = 50.0             # both sides must be > this (cm) to attempt a brave push
+    push_speed: float = 0.90               # forward speed during brave push
+    push_duration_s: float = 0.9           # how long to push before rescanning
+    push_cooldown_s: float = 6.0           # minimum gap between push attempts
     escape_escalation_window: float = 5.0   # time window for escape escalation
     escape_escalation_levels: int = 3       # number of escalation levels
     escape_level_duration: float = 1.5      # seconds per escalation level
@@ -158,6 +162,7 @@ class AutonomousCarController:
     heading_history: Deque[int] = field(init=False)
     last_plan_time: float = field(default=0.0)
     scan_confidence_history: Deque[float] = field(init=False)
+    last_push_time: float = field(default=-math.inf)
 
     def __post_init__(self):
         self.front_history = deque(maxlen=self.config.front_history_size)
@@ -390,6 +395,18 @@ class AutonomousCarController:
         if left <= 0.0 or right <= 0.0:
             return False
         return left < self.config.dead_end_side_threshold and right < self.config.dead_end_side_threshold
+
+    def is_pushable_obstacle(self, front_distance: float) -> bool:
+        """Return True when a single object blocks the front but sides are open — worth a brave push."""
+        if front_distance <= self.config.danger_distance:
+            return False
+        if front_distance > self.config.dead_end_front_threshold:
+            return False
+        left = self.sanitize_distance(self.last_scan.get(-45, 0.0))
+        right = self.sanitize_distance(self.last_scan.get(45, 0.0))
+        if left <= 0.0 or right <= 0.0:
+            return False
+        return left > self.config.push_min_side and right > self.config.push_min_side
 
     def get_escape_escalation_level(self, now: float) -> int:
         if now - self.last_escape_time > self.config.escape_escalation_window:
@@ -765,6 +782,20 @@ class AutonomousCarController:
                 colour=self.motion_colour_for("escape", heading, 0.0, front_distance),
             )
 
+        # Brave push: if only the front is blocked and sides are clear, the obstacle
+        # might be movable — charge it with decisive force before giving up.
+        if (self.is_pushable_obstacle(front_distance)
+                and now - self.last_push_time >= self.config.push_cooldown_s):
+            self.last_push_time = now
+            self.current_speed = 0.0
+            return MotionCommand(
+                mode="brave_push",
+                left_speed=self.config.push_speed,
+                right_speed=self.config.push_speed,
+                heading=0,
+                colour=self.motion_colour_for("drive", 0, self.config.push_speed, front_distance),
+            )
+
         # Only re-trigger dead-end escape after a cooldown so the maneuver can complete
         if self.is_dead_end(front_distance) and now - self.dead_end_recovery_time >= 3.0:
             self.dead_end_recovery_time = now
@@ -917,8 +948,11 @@ def _describe_lights(command: MotionCommand, controller: "AutonomousCarControlle
     """Return a compact human-readable description of the current light emotion."""
     cfg = controller.config
 
+    if command.mode == "brave_push":
+        return "feel=BRAVE   | F:white(headlights!) M:gold(charge!) R:orange(thrust)"
+
     if command.mode == "escape":
-        return "feel=PANIC  | F:RED(danger!) M:dim  R:AMBER(alarm)"
+        return "feel=PANIC   | F:RED(danger!) M:dim  R:AMBER(alarm)"
 
     if command.mode == "dead_end_recovery":
         return "feel=TRAPPED | ALL:magenta-pulse(panic spin)"
@@ -991,6 +1025,17 @@ def apply_underlighting(tbot, controller: AutonomousCarController, command: Moti
     def _hsv(h, s, v):
         r, g, b = hsv_to_rgb(h % 1.0, max(0.0, min(1.0, s)), max(0.0, min(1.0, v)))
         return int(r * 255), int(g * 255), int(b * 255)
+
+    if command.mode == "brave_push":
+        # Bold charge: warm white front (headlights on full), gold middle, orange rear thrust
+        tbot.set_underlight(LIGHT_FRONT_LEFT,  255, 255, 180, show=False)
+        tbot.set_underlight(LIGHT_FRONT_RIGHT, 255, 255, 180, show=False)
+        tbot.set_underlight(LIGHT_MIDDLE_LEFT, 255, 180,   0, show=False)
+        tbot.set_underlight(LIGHT_MIDDLE_RIGHT,255, 180,   0, show=False)
+        tbot.set_underlight(LIGHT_REAR_LEFT,   255, 100,   0, show=False)
+        tbot.set_underlight(LIGHT_REAR_RIGHT,  255, 100,   0, show=False)
+        tbot.show_underlighting()
+        return
 
     if command.mode == "escape":
         # Alarm: blazing red front, hot amber rear, dim middle
@@ -1086,6 +1131,13 @@ def apply_command(tbot, controller: AutonomousCarController, command: MotionComm
         controller.last_scan_time = -math.inf
         return
 
+    if command.mode == "brave_push":
+        tbot.set_motor_speeds(command.left_speed, command.right_speed)
+        time.sleep(controller.config.push_duration_s)
+        tbot.stop()
+        controller.last_scan_time = -math.inf  # force immediate rescan to see if it moved
+        return
+
     if command.mode == "dead_end_recovery":
         controller.note_turn(command.heading)
         tbot.set_motor_speeds(command.left_speed, command.right_speed)
@@ -1139,7 +1191,12 @@ def main():
             command = controller.plan(front_distance, now)
 
             emotion = _describe_lights(command, controller, front_distance)
-            if command.mode == "escape":
+            if command.mode == "brave_push":
+                if on_inline_line:
+                    print()
+                    on_inline_line = False
+                print(f"[PUSH!]    front={front_distance:.0f}cm  → charging obstacle!  | {emotion}")
+            elif command.mode == "escape":
                 if on_inline_line:
                     print()
                     on_inline_line = False
