@@ -1108,6 +1108,8 @@ def main():
     controller = AutonomousCarController(AutonomousCarConfig())
     prev_mode = ""
     on_inline_line = False
+    last_print_time = 0.0
+    print_interval = 0.3   # seconds between drive-line refreshes
 
     try:
         tbot.initialise_servo()
@@ -1151,9 +1153,11 @@ def main():
                 side = "L" if command.heading < 0 else "R"
                 print(f"[DEAD END] front={front_distance:.0f}cm  turn={side}  | {emotion}")
             else:
-                arrow = "←" if command.heading < -10 else ("→" if command.heading > 10 else "↑")
-                print(f"\r[DRIVE] {arrow}  front={front_distance:5.1f}cm  hdg={command.heading:+4d}  spd={controller.current_speed:.2f}  | {emotion}   ", end='', flush=True)
-                on_inline_line = True
+                if now - last_print_time >= print_interval:
+                    arrow = "←" if command.heading < -10 else ("→" if command.heading > 10 else "↑")
+                    print(f"\r[DRIVE] {arrow}  front={front_distance:5.1f}cm  hdg={command.heading:+4d}  spd={controller.current_speed:.2f}  | {emotion}   ", end='', flush=True)
+                    on_inline_line = True
+                    last_print_time = now
 
             prev_mode = command.mode
             apply_command(tbot, controller, command, now)
