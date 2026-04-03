@@ -14,6 +14,7 @@ Stop the example by pressing button A.
 from __future__ import annotations
 
 import math
+import os
 import time
 from colorsys import hsv_to_rgb
 from collections import deque
@@ -1152,7 +1153,7 @@ def apply_command(tbot, controller: AutonomousCarController, command: MotionComm
 
 
 def main():
-    from trilobot import BUTTON_A, BUTTON_X, Trilobot
+    from trilobot import BUTTON_A, BUTTON_X, BUTTON_Y, Trilobot
 
     print("Trilobot Example: Autonomous Car\n")
 
@@ -1162,6 +1163,7 @@ def main():
     on_inline_line = False
     last_print_time = 0.0
     print_interval = 0.3   # seconds between drive-line refreshes
+    launch_distance_lights = False
 
     try:
         tbot.initialise_servo()
@@ -1171,6 +1173,9 @@ def main():
         _print_scan(controller.last_scan)
 
         while not tbot.read_button(BUTTON_A) and not tbot.read_button(BUTTON_X):
+            if tbot.read_button(BUTTON_Y):
+                launch_distance_lights = True
+                break
             now = time.monotonic()
             front_distance = tbot.read_distance(
                 timeout=controller.config.front_timeout_ms,
@@ -1229,6 +1234,11 @@ def main():
         except Exception:
             pass
         tbot.cleanup()
+
+    if launch_distance_lights:
+        print("\n[Y] Launching distance_lights.py ...")
+        os.execl('/bin/bash', 'bash', '-c',
+                 'cd ~/trilobot-python && . trilobot-env/bin/activate && python -u examples/distance_lights.py')
 
 
 if __name__ == "__main__":
