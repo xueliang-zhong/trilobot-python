@@ -117,6 +117,10 @@ class AutonomousCarConfig:
     scan_confidence_window: int = 5           # recent scans to evaluate confidence
     scan_confidence_threshold: float = 0.3    # variance threshold for low-confidence scan
     low_confidence_scan_s: float = 0.6        # reduced scan interval when confidence is low
+    danger_heatmap_decay: float = 0.995       # decay per loop cycle (~14s half-life at 60ms/loop)
+    danger_penalty_scale: float = 22.0        # score penalty per unit of danger memory
+    danger_score_escape: float = 1.0          # danger recorded per escape/dead-end event
+    danger_score_push: float = 0.5            # danger recorded per brave-push attempt
 
 
 @dataclass(frozen=True)
@@ -164,6 +168,7 @@ class AutonomousCarController:
     last_plan_time: float = field(default=0.0)
     scan_confidence_history: Deque[float] = field(init=False)
     last_push_time: float = field(default=-math.inf)
+    danger_heatmap: Dict[int, float] = field(default_factory=dict)
 
     def __post_init__(self):
         self.front_history = deque(maxlen=self.config.front_history_size)
@@ -354,6 +359,29 @@ class AutonomousCarController:
         if angle == 0:
             return
         self.exploration_memory[angle] = self.exploration_memory.get(angle, 0.0) + 1.0
+
+    def record_danger(self, angles: list, score: float):
+        """Burn a danger score into the heatmap for each given angle."""
+        for angle in angles:
+            self.danger_heatmap[angle] = min(1.0, self.danger_heatmap.get(angle, 0.0) + score)
+
+    def decay_danger_heatmap(self):
+        decay = self.config.danger_heatmap_decay
+        for angle in list(self.danger_heatmap.keys()):
+            self.danger_heatmap[angle] *= decay
+            if self.danger_heatmap[angle] < 0.02:
+                del self.danger_heatmap[angle]
+
+    def format_heatmap(self) -> str:
+        """Single-line ASCII bar showing danger level per scan angle."""
+        blocks = ' ░▒▓█'
+        parts = []
+        for angle in self.config.scan_angles:
+            d = self.danger_heatmap.get(angle, 0.0)
+            ch = blocks[min(4, int(d * 5))]
+            sign = '+' if angle > 0 else ''
+            parts.append(f"{sign}{angle}:{ch}")
+        return '  '.join(parts)
 
     def angle_to_cell(self, angle: int) -> int:
         max_angle = max(abs(a) for a in self.config.scan_angles) or 1
@@ -704,6 +732,10 @@ class AutonomousCarController:
 
         score += self.frontier_bonus_for_angle(angle)
 
+        danger = self.danger_heatmap.get(angle, 0.0)
+        if danger > 0.02:
+            score -= danger * self.config.danger_penalty_scale
+
         if self.path_commitment_heading != 0:
             angle_gap = abs(angle - self.path_commitment_heading)
             if angle_gap < 25:
@@ -761,6 +793,7 @@ class AutonomousCarController:
         front_distance = self.observe_front(front_distance)
         approach_rate = self.track_approach_rate(front_distance, now)
         self.decay_exploration_memory()
+        self.decay_danger_heatmap()
         heading = self.select_heading(self.last_scan, front_distance, now=now)
 
         if front_distance <= self.config.danger_distance:
@@ -775,6 +808,7 @@ class AutonomousCarController:
             self.stuck_escape_times.append(now)
             self.path_commitment_heading = 0
             self.path_commitment_time = -math.inf
+            self.record_danger([0, heading], self.config.danger_score_escape)
             return MotionCommand(
                 mode="escape",
                 left_speed=-self.config.escape_reverse_speed,
@@ -789,6 +823,7 @@ class AutonomousCarController:
                 and now - self.last_push_time >= self.config.push_cooldown_s):
             self.last_push_time = now
             self.current_speed = 0.0
+            self.record_danger([0], self.config.danger_score_push)
             return MotionCommand(
                 mode="brave_push",
                 left_speed=self.config.push_speed,
@@ -806,6 +841,7 @@ class AutonomousCarController:
             self.path_commitment_heading = 0
             self.path_commitment_time = -math.inf
             self.stuck_escape_times.append(now)
+            self.record_danger([0, -45, 45], self.config.danger_score_escape)
             return MotionCommand(
                 mode="escape",
                 left_speed=-self.config.escape_reverse_speed,
@@ -1171,6 +1207,7 @@ def main():
         time.sleep(0.25)
         perform_scan(tbot, controller)
         _print_scan(controller.last_scan)
+        print(f"[HEAT] {controller.format_heatmap()}  (danger memory, █=avoid)")
 
         while not tbot.read_button(BUTTON_A) and not tbot.read_button(BUTTON_X):
             if tbot.read_button(BUTTON_Y):
@@ -1192,6 +1229,7 @@ def main():
                     print()
                     on_inline_line = False
                 _print_scan(controller.last_scan)
+                print(f"[HEAT] {controller.format_heatmap()}  (danger memory, █=avoid)")
 
             command = controller.plan(front_distance, now)
 
