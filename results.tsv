@@ -3,3 +3,4 @@ timestamp_utc	generation	status	commit	note
 2026-04-02T09:30:00Z	gen03	success	2f5a301	speed smoothing + adaptive open-space scan interval; verified on Pi
 2026-04-02T10:00:00Z	gen04	success	700d0a8	per-angle EMA openness bias; verified on Pi, 19 tests
 2026-04-02T10:30:00Z	gen05	success	dda9982	side-proximity correction + forced post-escape rescan; verified on Pi, 23 tests
+2026-04-03T16:20:16Z	gen06	partial	d2e1936	gap-heading gating + boredom exploration; local unittest discover passed, Pi SSH blocked by sandbox
