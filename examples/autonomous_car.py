@@ -905,6 +905,11 @@ class AutonomousCarController:
         )
 
 
+def _print_scan(scan: Dict[int, float]):
+    parts = "  ".join(f"{'%+d' % a}:{scan.get(a, 0):.0f}" for a in sorted(scan))
+    print(f"[SCAN] {parts} cm")
+
+
 def perform_scan(tbot, controller: AutonomousCarController) -> Dict[int, float]:
     scan = {}
     for angle in controller.config.scan_angles:
@@ -969,12 +974,15 @@ def main():
 
     tbot = Trilobot()
     controller = AutonomousCarController(AutonomousCarConfig())
+    prev_mode = ""
+    on_inline_line = False
 
     try:
         tbot.initialise_servo()
         tbot.set_servo_angle(0)
         time.sleep(0.25)
         perform_scan(tbot, controller)
+        _print_scan(controller.last_scan)
 
         while not tbot.read_button(BUTTON_A):
             now = time.monotonic()
@@ -989,8 +997,32 @@ def main():
             if controller.should_scan(front_distance, now):
                 perform_scan(tbot, controller)
                 front_distance = controller.last_scan.get(0, front_distance)
+                if on_inline_line:
+                    print()
+                    on_inline_line = False
+                _print_scan(controller.last_scan)
 
             command = controller.plan(front_distance, now)
+
+            if command.mode == "escape":
+                if on_inline_line:
+                    print()
+                    on_inline_line = False
+                esc_lvl = controller.get_escape_escalation_level(now)
+                side = "L" if command.heading < 0 else "R"
+                print(f"[ESCAPE]   front={front_distance:.0f}cm  turn={side}  lvl={esc_lvl}")
+            elif command.mode == "dead_end_recovery":
+                if on_inline_line:
+                    print()
+                    on_inline_line = False
+                side = "L" if command.heading < 0 else "R"
+                print(f"[DEAD END] front={front_distance:.0f}cm  turn={side}")
+            else:
+                arrow = "←" if command.heading < -10 else ("→" if command.heading > 10 else "↑")
+                print(f"\r[DRIVE] {arrow}  front={front_distance:5.1f}cm  hdg={command.heading:+4d}  spd={controller.current_speed:.2f}  ", end='', flush=True)
+                on_inline_line = True
+
+            prev_mode = command.mode
             apply_command(tbot, controller, command)
             time.sleep(controller.config.loop_delay_s)
     finally:
