@@ -765,24 +765,27 @@ class AutonomousCarController:
                 colour=self.motion_colour_for("escape", heading, 0.0, front_distance),
             )
 
-        if self.is_dead_end(front_distance):
+        # Only re-trigger dead-end escape after a cooldown so the maneuver can complete
+        if self.is_dead_end(front_distance) and now - self.dead_end_recovery_time >= 3.0:
             self.dead_end_recovery_time = now
             self.escalate_escape(now)
             heading = -80 if sum(self.recent_turns) >= 0 else 80
             self.current_speed = 0.0
             self.path_commitment_heading = 0
             self.path_commitment_time = -math.inf
+            self.stuck_escape_times.append(now)
             return MotionCommand(
-                mode="dead_end_recovery",
-                left_speed=-self.config.escape_reverse_speed * 0.6,
-                right_speed=-self.config.escape_reverse_speed * 0.6,
+                mode="escape",
+                left_speed=-self.config.escape_reverse_speed,
+                right_speed=-self.config.escape_reverse_speed,
                 heading=heading,
-                colour=self.motion_colour_for("dead_end_recovery", heading, 0.0, front_distance),
+                colour=self.motion_colour_for("escape", heading, 0.0, front_distance),
             )
 
         if now - self.dead_end_recovery_time < 1.5:
             recovery_progress = (now - self.dead_end_recovery_time) / 1.5
-            turn_speed = self.config.escape_turn_speed * min(1.0, recovery_progress * 2.0)
+            # Start at 60% speed immediately — no hesitant ramp-up
+            turn_speed = self.config.escape_turn_speed * max(0.6, min(1.0, recovery_progress * 2.0))
             heading = -80 if sum(self.recent_turns) >= 0 else 80
             if heading < 0:
                 left_s = -0.2 * (1.0 - recovery_progress)
@@ -925,8 +928,88 @@ def perform_scan(tbot, controller: AutonomousCarController) -> Dict[int, float]:
     return scan
 
 
-def apply_command(tbot, controller: AutonomousCarController, command: MotionCommand):
-    tbot.fill_underlighting(command.colour)
+def apply_underlighting(tbot, controller: AutonomousCarController, command: MotionCommand, now: float):
+    """Express the car's emotional state through per-LED underlighting."""
+    from trilobot import (
+        LIGHT_FRONT_LEFT, LIGHT_FRONT_RIGHT,
+        LIGHT_MIDDLE_LEFT, LIGHT_MIDDLE_RIGHT,
+        LIGHT_REAR_LEFT, LIGHT_REAR_RIGHT,
+    )
+
+    cfg = controller.config
+
+    def _hsv(h, s, v):
+        r, g, b = hsv_to_rgb(h % 1.0, max(0.0, min(1.0, s)), max(0.0, min(1.0, v)))
+        return int(r * 255), int(g * 255), int(b * 255)
+
+    if command.mode == "escape":
+        # Alarm: blazing red front, hot amber rear, dim middle
+        tbot.set_underlight(LIGHT_FRONT_LEFT,  255,  0,  0, show=False)
+        tbot.set_underlight(LIGHT_FRONT_RIGHT, 255,  0,  0, show=False)
+        tbot.set_underlight(LIGHT_MIDDLE_LEFT,  60,  0,  0, show=False)
+        tbot.set_underlight(LIGHT_MIDDLE_RIGHT,  60,  0,  0, show=False)
+        tbot.set_underlight(LIGHT_REAR_LEFT,   255, 90,  0, show=False)
+        tbot.set_underlight(LIGHT_REAR_RIGHT,  255, 90,  0, show=False)
+        tbot.show_underlighting()
+        return
+
+    if command.mode == "dead_end_recovery":
+        # Panic spin: pulsing magenta
+        pulse = 0.5 + 0.5 * math.sin(now * 14.0)
+        col = _hsv(0.83, 1.0, 0.3 + 0.7 * pulse)
+        tbot.fill_underlighting(*col)
+        return
+
+    # --- drive mode ---
+    front_dist = controller.sanitize_distance(controller.last_scan.get(0, cfg.cruise_distance))
+    speed = controller.current_speed
+    speed_ratio = min(1.0, speed / max(cfg.open_space_speed, 0.01))
+    max_angle = max(abs(a) for a in cfg.scan_angles) or 1
+    steer = command.heading / max_angle  # −1=full left … +1=full right
+
+    # Front LEDs: distance emotion — red danger → amber caution → green clear → bright teal open
+    if front_dist <= 0.0 or front_dist <= cfg.danger_distance:
+        front = (255, 0, 0)
+    elif front_dist <= cfg.caution_distance:
+        t = (front_dist - cfg.danger_distance) / max(cfg.caution_distance - cfg.danger_distance, 1.0)
+        front = (255, int(110 * t), 0)
+    elif front_dist <= cfg.cruise_distance:
+        t = (front_dist - cfg.caution_distance) / max(cfg.cruise_distance - cfg.caution_distance, 1.0)
+        front = (int(255 * (1.0 - t)), 255, 0)
+    else:
+        extra = min(1.0, (front_dist - cfg.cruise_distance) / 40.0)
+        front = (0, 255, int(180 * extra))
+
+    # Middle LEDs: steering emotion — orange=turning left, blue=turning right, green=straight
+    left_turn  = max(0.0, -steer)
+    right_turn = max(0.0,  steer)
+    mid_l = _hsv(
+        0.08 * left_turn + 0.33 * (1.0 - left_turn),   # orange → green
+        0.9,
+        0.2 + 0.55 * speed_ratio + 0.25 * left_turn,
+    )
+    mid_r = _hsv(
+        0.60 * right_turn + 0.33 * (1.0 - right_turn), # blue → green
+        0.9,
+        0.2 + 0.55 * speed_ratio + 0.25 * right_turn,
+    )
+
+    # Rear LEDs: speed/energy — teal thruster glow, breathing pulse with speed
+    pulse = 0.5 + 0.5 * math.sin(now * (2.5 + speed_ratio * 5.0))
+    rear_v = 0.05 + 0.55 * speed_ratio + 0.25 * pulse * speed_ratio
+    rear = _hsv(0.50 + 0.06 * speed_ratio, 0.95, rear_v)
+
+    tbot.set_underlight(LIGHT_FRONT_LEFT,   *front, show=False)
+    tbot.set_underlight(LIGHT_FRONT_RIGHT,  *front, show=False)
+    tbot.set_underlight(LIGHT_MIDDLE_LEFT,  *mid_l, show=False)
+    tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid_r, show=False)
+    tbot.set_underlight(LIGHT_REAR_LEFT,    *rear,  show=False)
+    tbot.set_underlight(LIGHT_REAR_RIGHT,   *rear,  show=False)
+    tbot.show_underlighting()
+
+
+def apply_command(tbot, controller: AutonomousCarController, command: MotionCommand, now: float):
+    apply_underlighting(tbot, controller, command, now)
 
     if command.mode == "escape":
         controller.note_turn(command.heading)
@@ -958,7 +1041,6 @@ def apply_command(tbot, controller: AutonomousCarController, command: MotionComm
         tbot.set_motor_speeds(command.left_speed, command.right_speed)
         time.sleep(controller.config.dead_end_recovery_turn_s)
         tbot.stop()
-        controller.last_scan_time = -math.inf
         return
 
     if abs(command.heading) >= 30:
@@ -1023,7 +1105,7 @@ def main():
                 on_inline_line = True
 
             prev_mode = command.mode
-            apply_command(tbot, controller, command)
+            apply_command(tbot, controller, command, now)
             time.sleep(controller.config.loop_delay_s)
     finally:
         tbot.stop()
