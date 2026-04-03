@@ -1100,7 +1100,7 @@ def apply_command(tbot, controller: AutonomousCarController, command: MotionComm
 
 
 def main():
-    from trilobot import BUTTON_A, Trilobot
+    from trilobot import BUTTON_A, BUTTON_X, Trilobot
 
     print("Trilobot Example: Autonomous Car\n")
 
@@ -1116,7 +1116,7 @@ def main():
         perform_scan(tbot, controller)
         _print_scan(controller.last_scan)
 
-        while not tbot.read_button(BUTTON_A):
+        while not tbot.read_button(BUTTON_A) and not tbot.read_button(BUTTON_X):
             now = time.monotonic()
             front_distance = tbot.read_distance(
                 timeout=controller.config.front_timeout_ms,
