@@ -184,6 +184,13 @@ class AutonomousCarConfig:
     follow_max_speed: float = 0.55            # top speed when chasing
     follow_reverse_speed: float = 0.28        # speed when backing off
     follow_kp: float = 0.018                  # proportional gain (speed per cm of error)
+    playful_charge_distance: float = 26.0     # invite playful charge when something rushes into this band
+    playful_charge_min_distance: float = 16.0 # keep playful charge out of true danger range
+    playful_charge_speed: float = 0.78        # short playful lunge speed
+    playful_charge_duration_s: float = 0.22   # keep playful charge brief
+    playful_charge_cooldown_s: float = 1.8    # avoid continuous charging loops
+    playful_charge_approach_rate: float = 12.0  # cm/s threshold that suggests someone is actively playing
+    playful_charge_wiggle_bias: float = 0.10  # slight left/right asymmetry to feel playful
     stress_escape_gain: float = 0.25          # stress added per escape / dead-end
     stress_push_gain: float = 0.10            # stress added per brave push
     stress_decay: float = 0.998              # per-loop decay (~34s half-life)
@@ -879,6 +886,7 @@ class AutonomousCarController:
     target_heading_time: float = field(default=-math.inf)
     current_speed: float = field(default=0.0)
     current_heading: int = field(default=0)
+    last_playful_charge_time: float = field(default=-math.inf)
     last_position_observation: Dict[int, float] = field(default_factory=dict)
     last_position_observation_time: float = field(default=-math.inf)
     position_observation_history: Deque[Tuple[float, Dict[int, float]]] = field(init=False)
@@ -1812,6 +1820,21 @@ class AutonomousCarController:
             return False
         return left > self.config.push_min_side and right > self.config.push_min_side
 
+    def should_playful_charge(self, front_distance: float, approach_rate: float, now: float) -> bool:
+        if front_distance <= self.config.playful_charge_min_distance:
+            return False
+        if front_distance > self.config.playful_charge_distance:
+            return False
+        if approach_rate < self.config.playful_charge_approach_rate:
+            return False
+        if now - self.last_playful_charge_time < self.config.playful_charge_cooldown_s:
+            return False
+        left = self.sanitize_distance(self.last_scan.get(-45, 0.0))
+        right = self.sanitize_distance(self.last_scan.get(45, 0.0))
+        if left <= 0.0 or right <= 0.0:
+            return False
+        return left >= front_distance and right >= front_distance
+
     def get_escape_escalation_level(self, now: float) -> int:
         if now - self.last_escape_time > self.config.escape_escalation_window:
             return 0
@@ -2010,6 +2033,8 @@ class AutonomousCarController:
             return (255, 128, 0)
         if mode == "peek_pounce":
             return (255, 72, 0)
+        if mode == "playful_charge":
+            return (255, 255, 255)
         if mode != "drive":
             return (32, 32, 40)
 
@@ -7496,6 +7521,29 @@ class AutonomousCarController:
             if recovery_cmd is not None:
                 return recovery_cmd
 
+        if self.should_playful_charge(front_distance, approach_rate, now):
+            self.clear_pounce_commitment()
+            self.last_playful_charge_time = now
+            self.current_speed = 0.0
+            self.set_mood("celebration", now, "play_invitation")
+            self.update_flow_memory(0, front_distance)
+            wiggle = self.config.playful_charge_wiggle_bias
+            if self.total_loops % 2 == 0:
+                left_speed = self.config.playful_charge_speed * (1.0 + wiggle)
+                right_speed = self.config.playful_charge_speed * (1.0 - wiggle)
+                heading = 12
+            else:
+                left_speed = self.config.playful_charge_speed * (1.0 - wiggle)
+                right_speed = self.config.playful_charge_speed * (1.0 + wiggle)
+                heading = -12
+            return MotionCommand(
+                mode="playful_charge",
+                left_speed=left_speed,
+                right_speed=right_speed,
+                heading=heading,
+                colour=self.motion_colour_for("playful_charge", heading, self.config.playful_charge_speed, front_distance),
+            )
+
         # Brave push: if only the front is blocked and sides are clear, the obstacle
         # might be movable — charge it with decisive force before giving up.
         if (self.is_pushable_obstacle(front_distance)
@@ -8207,6 +8255,9 @@ def _describe_lights(command: MotionCommand, controller: "AutonomousCarControlle
     if command.mode == "peek_pounce":
         return "feel=locked-on | F:amber(lock) M:red(lean) R:white(thrust)"
 
+    if command.mode == "playful_charge":
+        return "feel=PLAYFUL | F:white(play!) M:white(charge!) R:ice(play chase)"
+
     if command.mode == "brave_push":
         return "feel=BRAVE   | F:white(headlights!) M:gold(charge!) R:orange(thrust)"
 
@@ -8592,6 +8643,20 @@ def apply_underlighting(tbot, controller: AutonomousCarController, command: Moti
             tbot.set_underlight(LIGHT_MIDDLE_RIGHT,255, 180,   0, show=False)
             tbot.set_underlight(LIGHT_REAR_LEFT,   255, 100,   0, show=False)
             tbot.set_underlight(LIGHT_REAR_RIGHT,  255, 100,   0, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "playful_charge":
+            pulse = 0.55 + 0.45 * math.sin(now * 14.0)
+            front = (255, 255, 255)
+            middle = (220, 220, 255)
+            rear = (int(120 + 80 * pulse), int(120 + 80 * pulse), 255)
+            tbot.set_underlight(LIGHT_FRONT_LEFT,  *front, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *front, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *middle, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT,*middle, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT,   *rear, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT,  *rear, show=False)
             tbot.show_underlighting()
             return
 
@@ -9977,6 +10042,15 @@ def apply_command(tbot, controller: AutonomousCarController, command: MotionComm
                 _safe_hardware_call(tbot.stop)
                 return
             _safe_sleep(controller.config.push_duration_s)
+            _safe_hardware_call(tbot.stop)
+            controller.last_scan_time = -math.inf
+            return
+
+        if command.mode == "playful_charge":
+            if _safe_hardware_call(tbot.set_motor_speeds, command.left_speed, command.right_speed, default=False) is False:
+                _safe_hardware_call(tbot.stop)
+                return
+            _safe_sleep(controller.config.playful_charge_duration_s)
             _safe_hardware_call(tbot.stop)
             controller.last_scan_time = -math.inf
             return

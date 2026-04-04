@@ -213,6 +213,32 @@ class DaddyCarV3Tests(unittest.TestCase):
         self.assertGreater(command.left_speed, 0.0)
         self.assertGreater(command.right_speed, 0.0)
 
+    def test_plan_triggers_playful_charge_when_someone_rapidly_approaches(self):
+        module = load_daddy_car_v3_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+        controller.last_scan = {-80: 72.0, -45: 65.0, 0: 45.0, 45: 66.0, 80: 73.0}
+        controller.last_scan_time = 4.0
+        controller.track_approach_rate(45.0, 4.0)
+        controller.track_approach_rate(32.0, 4.4)
+        controller.track_approach_rate(24.0, 4.8)
+        controller.last_scan[0] = 24.0
+
+        command = controller.plan(front_distance=24.0, now=4.9)
+
+        self.assertEqual(command.mode, "playful_charge")
+        self.assertGreater(command.left_speed, 0.0)
+        self.assertGreater(command.right_speed, 0.0)
+
+    def test_describe_lights_for_playful_charge_uses_white_charge_theme(self):
+        module = load_daddy_car_v3_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+        command = module.MotionCommand("playful_charge", 0.75, 0.68, 12, (255, 255, 255))
+
+        lights = module._describe_lights(command, controller, 24.0)
+
+        self.assertIn("white", lights.lower())
+        self.assertIn("charge", lights.lower())
+
     def test_update_position_awareness_marks_visual_stuck_when_scene_does_not_change(self):
         module = load_daddy_car_v3_module()
         controller = module.AutonomousCarController(module.AutonomousCarConfig())
