@@ -184,6 +184,23 @@ class DaddyCarV3Tests(unittest.TestCase):
         self.assertIn("open road ahead", dashboard)
         self.assertIn("SCAN refreshed", dashboard)
         self.assertIn("\x1b[", dashboard)
+        self.assertIn("/\\", dashboard)
+        self.assertIn("CAR", dashboard)
+        self.assertIn("front 88.0cm", dashboard)
+
+    def test_render_forward_view_places_sensor_columns_in_car_pov_scene(self):
+        module = load_daddy_car_v3_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig(max_distance=140.0))
+        scan = {-80: 25.0, -45: 45.0, 0: 110.0, 45: 75.0, 80: 30.0}
+
+        scene = module.render_forward_view(scan, controller)
+
+        self.assertIn("left", scene)
+        self.assertIn("right", scene)
+        self.assertIn("horizon", scene)
+        self.assertIn("CAR", scene)
+        self.assertIn("front 110.0cm", scene)
+        self.assertIn("\x1b[38;2;", scene)
 
     def test_render_underlight_swatch_uses_truecolor_ansi_blocks(self):
         module = load_daddy_car_v3_module()

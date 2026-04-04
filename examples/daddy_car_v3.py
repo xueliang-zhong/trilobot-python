@@ -7914,6 +7914,40 @@ def _heading_arrow(heading: int) -> str:
     return "↑"
 
 
+def render_forward_view(scan: Dict[int, float], controller: "AutonomousCarController") -> str:
+    max_distance = max(controller.config.max_distance, 1.0)
+    columns = []
+    for angle in controller.config.scan_angles:
+        distance = controller.sanitize_distance(scan.get(angle, 0.0))
+        columns.append((angle, distance, _tui_distance_colour(distance, controller.config)))
+
+    lane_rows = []
+    row_templates = [
+        ("left", "horizon"),
+        ("lane", "far"),
+        ("lane", "mid"),
+        ("lane", "near"),
+    ]
+    for row_index, (left_label, depth_label) in enumerate(row_templates):
+        indent = " " * row_index
+        row_parts = []
+        for angle, distance, colour in columns:
+            closeness = 1.0 - max(0.0, min(1.0, distance / max_distance))
+            threshold = 0.18 + row_index * 0.18
+            glyph = "█" if closeness >= threshold else "·"
+            if angle == 0 and glyph == "·":
+                glyph = "^" if row_index <= 1 else "│"
+            row_parts.append(f"{_ansi_fg(colour)}{glyph * 3}{ANSI_RESET}")
+        lane_rows.append(f"{indent}{left_label:<7} /{' '.join(row_parts)}\\ {depth_label}")
+
+    footer_colour = _tui_distance_colour(controller.sanitize_distance(scan.get(0, 0.0)), controller.config)
+    car_line = f"        {' ' * 3}{_ansi_fg(footer_colour)}[CAR]{ANSI_RESET}"
+    nose_line = f"         {' ' * 2}{_ansi_fg((200, 200, 220))}/\\{ANSI_RESET}"
+    front_distance = controller.sanitize_distance(scan.get(0, 0.0))
+    legend = f"left sweep                         right sweep   front {front_distance:4.1f}cm"
+    return "\n".join([legend, *lane_rows, nose_line, car_line])
+
+
 def _box(title: str, lines: list[str], accent: Colour) -> list[str]:
     width = max(len(title) + 2, *(len(line) for line in lines)) if lines else len(title) + 2
     top = f"{_ansi_fg(accent)}┌─ {title}{'─' * max(0, width - len(title) - 1)}┐{ANSI_RESET}"
@@ -7934,13 +7968,7 @@ def render_tui_dashboard(
     transient_message: str = "",
 ) -> str:
     scan = controller.last_scan or {angle: 0.0 for angle in controller.config.scan_angles}
-    max_distance = max(controller.config.max_distance, 1.0)
-    see_lines = []
-    for angle in sorted(scan):
-        distance = controller.sanitize_distance(scan.get(angle, 0.0))
-        colour = _tui_distance_colour(distance, controller.config)
-        bar = _render_scan_bar(distance, max_distance)
-        see_lines.append(f"{_ansi_fg(colour)}{angle:+4d}{ANSI_RESET} {bar} {distance:5.1f}cm")
+    see_lines = render_forward_view(scan, controller).splitlines()
     see_lines.append(f"heat  {controller.format_heatmap()}")
     see_lines.append(
         f"trap  body>={controller.required_gap_width():.0f}cm  pinch<={controller.config.min_side_clearance_cm:.0f}cm"
