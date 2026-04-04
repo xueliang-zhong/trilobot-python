@@ -230,6 +230,10 @@ class AutonomousCarConfig:
     gap_width_side_blend: float = 0.60        # weight for side readings in gap width estimate
     gap_commitment_bonus: float = 15.0        # score bonus when gap is confirmed wide enough
     gap_reject_penalty: float = 25.0          # score penalty when gap is too narrow
+    chassis_width_cm: float = 16.0            # physical body width used to reject openings the sensor beam overestimates
+    wheel_clearance_margin_cm: float = 5.0    # extra margin beyond chassis width for wheel scrub and furniture legs
+    min_side_clearance_cm: float = 12.0       # minimum side reading allowed before treating a heading as a pinch trap
+    side_pinch_penalty: float = 18.0          # extra score penalty for headings that skim too close to side obstacles
 
     obstacle_density_window: int = 6          # recent scans for obstacle density calculation
     obstacle_density_threshold: float = 0.50  # ratio of blocked cells to trigger high density
@@ -2369,6 +2373,30 @@ class AutonomousCarController:
         self.gap_width_cache[angle] = width
         return width
 
+    def required_gap_width(self) -> float:
+        return max(self.config.min_gap_width, self.config.chassis_width_cm + self.config.wheel_clearance_margin_cm)
+
+    def side_pinch_penalty_for_heading(self, angle: int, scan: Dict[int, float]) -> float:
+        left = self.sanitize_distance(scan.get(-45, 0.0))
+        right = self.sanitize_distance(scan.get(45, 0.0))
+        front = self.sanitize_distance(scan.get(0, 0.0))
+        threshold = self.config.min_side_clearance_cm
+        penalty = 0.0
+        if angle < 0 and 0.0 < left < threshold:
+            penalty += (1.0 - left / threshold) * self.config.side_pinch_penalty
+        elif angle > 0 and 0.0 < right < threshold:
+            penalty += (1.0 - right / threshold) * self.config.side_pinch_penalty
+        elif angle == 0:
+            if 0.0 < left < threshold:
+                penalty += (1.0 - left / threshold) * self.config.side_pinch_penalty * 0.7
+            if 0.0 < right < threshold:
+                penalty += (1.0 - right / threshold) * self.config.side_pinch_penalty * 0.7
+        if angle != 0 and front >= self.config.straight_preference_distance:
+            nearest_side = min(d for d in (left, right) if d > 0.0) if any(d > 0.0 for d in (left, right)) else 0.0
+            if 0.0 < nearest_side < threshold:
+                penalty += (1.0 - nearest_side / threshold) * self.config.side_pinch_penalty
+        return penalty
+
     def calculate_obstacle_density(self, scan: Dict[int, float]) -> float:
         if not scan:
             return 0.0
@@ -3589,9 +3617,12 @@ class AutonomousCarController:
     def apply_gap_width_filter(self, angle: int, scan: Dict[int, float], score: float) -> float:
         width = self.estimate_gap_width(angle, scan)
         w = self.get_scoring_weight("gap_width")
-        if width < self.config.min_gap_width:
+        required_width = self.required_gap_width()
+        side_pinch_penalty = self.side_pinch_penalty_for_heading(angle, scan)
+        score -= side_pinch_penalty * w
+        if width < required_width:
             return score - self.config.gap_reject_penalty * w
-        return score + self.config.gap_commitment_bonus * (width / self.config.min_gap_width) * w
+        return score + self.config.gap_commitment_bonus * min(1.5, width / required_width) * w
 
     def apply_side_obstacle_avoidance(self, steer: float, front_distance: float, scan: Dict[int, float]) -> float:
         left = self.sanitize_distance(scan.get(-45, 0.0))

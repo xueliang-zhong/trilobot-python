@@ -125,6 +125,41 @@ class DaddyCarV3Tests(unittest.TestCase):
         self.assertIn(("fill", 255, 0, 128), recorded)
         self.assertIn(("show",), recorded)
 
+    def test_gap_width_filter_rejects_heading_when_chassis_clearance_is_too_small(self):
+        module = load_daddy_car_v3_module()
+        config = module.AutonomousCarConfig(
+            chassis_width_cm=16.0,
+            wheel_clearance_margin_cm=6.0,
+            min_side_clearance_cm=13.0,
+            gap_reject_penalty=40.0,
+        )
+        controller = module.AutonomousCarController(config)
+        scan = {-80: 60.0, -45: 12.0, 0: 95.0, 45: 44.0, 80: 70.0}
+
+        penalized = controller.apply_gap_width_filter(angle=-45, scan=scan, score=25.0)
+
+        self.assertLess(penalized, -5.0)
+
+    def test_select_heading_avoids_side_pinch_trap_even_when_front_is_open(self):
+        module = load_daddy_car_v3_module()
+        config = module.AutonomousCarConfig(
+            straight_preference_gain=18.0,
+            straight_preference_distance=70.0,
+            chassis_width_cm=16.0,
+            wheel_clearance_margin_cm=6.0,
+            min_side_clearance_cm=13.0,
+        )
+        controller = module.AutonomousCarController(config)
+
+        heading = controller.select_heading(
+            scan={-80: 55.0, -45: 10.0, 0: 96.0, 45: 72.0, 80: 68.0},
+            front_distance=96.0,
+            now=75.0,
+        )
+
+        self.assertNotEqual(heading, -45)
+        self.assertEqual(heading, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
