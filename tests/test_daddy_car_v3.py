@@ -97,6 +97,33 @@ class DaddyCarV3Tests(unittest.TestCase):
 
         self.assertGreaterEqual(tbot.stop_calls, 1)
 
+    def test_shutdown_tbot_stops_and_cleans_up_without_raising(self):
+        module = load_daddy_car_v3_module()
+        events = []
+
+        class MostlyBrokenTbot:
+            def stop(self):
+                events.append("stop")
+
+            def clear_underlighting(self):
+                events.append("clear")
+
+            def set_servo_angle(self, angle):
+                events.append(("servo", angle))
+                raise RuntimeError("servo already gone")
+
+            def disable_servo(self):
+                events.append("disable")
+
+            def cleanup(self):
+                events.append("cleanup")
+
+        module.shutdown_tbot(MostlyBrokenTbot())
+
+        self.assertIn("stop", events)
+        self.assertIn("clear", events)
+        self.assertIn("cleanup", events)
+
     def test_safe_lighting_proxy_clamps_invalid_rgb_values(self):
         module = load_daddy_car_v3_module()
         recorded = []

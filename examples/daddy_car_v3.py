@@ -10026,6 +10026,18 @@ def apply_command(tbot, controller: AutonomousCarController, command: MotionComm
         _safe_hardware_call(tbot.stop)
 
 
+def shutdown_tbot(tbot):
+    _safe_hardware_call(tbot.stop)
+    _safe_hardware_call(tbot.clear_underlighting)
+    try:
+        _safe_hardware_call(tbot.set_servo_angle, 0)
+        _safe_sleep(0.1)
+        _safe_hardware_call(tbot.disable_servo)
+    except Exception:
+        pass
+    _safe_hardware_call(tbot.cleanup)
+
+
 def startup_spin_scan(tbot, controller: AutonomousCarController):
     """Spin 360° in four 90° steps, scanning at each quadrant.
     Ends facing the most open direction found."""
@@ -10181,6 +10193,9 @@ def main():
 
                     apply_command(tbot, controller, command, now)
                 loop_error_count = 0
+            except KeyboardInterrupt:
+                print("\n[INTERRUPT] stopping Trilobot cleanly")
+                break
             except Exception as exc:
                 controller.current_speed = 0.0
                 controller.last_scan_time = -math.inf
@@ -10196,16 +10211,10 @@ def main():
                     loop_error_count = 0
 
             _safe_sleep(controller.config.loop_delay_s)
+    except KeyboardInterrupt:
+        print("\n[INTERRUPT] stopping Trilobot cleanly")
     finally:
-        _safe_hardware_call(tbot.stop)
-        _safe_hardware_call(tbot.clear_underlighting)
-        try:
-            _safe_hardware_call(tbot.set_servo_angle, 0)
-            _safe_sleep(0.1)
-            _safe_hardware_call(tbot.disable_servo)
-        except Exception:
-            pass
-        _safe_hardware_call(tbot.cleanup)
+        shutdown_tbot(tbot)
 
     if launch_distance_lights:
         print("\n[Y] Launching distance_lights.py ...")
