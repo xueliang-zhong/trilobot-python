@@ -7914,38 +7914,52 @@ def _heading_arrow(heading: int) -> str:
     return "↑"
 
 
+def _distance_state(distance: float, cfg: "AutonomousCarConfig") -> str:
+    if distance <= 0.0 or distance <= cfg.danger_distance:
+        return "BLOCKED"
+    if distance <= cfg.caution_distance:
+        return "TIGHT"
+    if distance <= cfg.cruise_distance:
+        return "OPEN"
+    return "CLEAR"
+
+
 def render_forward_view(scan: Dict[int, float], controller: "AutonomousCarController") -> str:
-    max_distance = max(controller.config.max_distance, 1.0)
-    columns = []
-    for angle in controller.config.scan_angles:
-        distance = controller.sanitize_distance(scan.get(angle, 0.0))
-        columns.append((angle, distance, _tui_distance_colour(distance, controller.config)))
-
-    lane_rows = []
-    row_templates = [
-        ("left", "horizon"),
-        ("lane", "far"),
-        ("lane", "mid"),
-        ("lane", "near"),
+    cfg = controller.config
+    max_distance = max(cfg.max_distance, 1.0)
+    sectors = [
+        ("LEFT", min(controller.sanitize_distance(scan.get(-80, 0.0)), controller.sanitize_distance(scan.get(-45, 0.0)))),
+        ("AHEAD", controller.sanitize_distance(scan.get(0, 0.0))),
+        ("RIGHT", min(controller.sanitize_distance(scan.get(45, 0.0)), controller.sanitize_distance(scan.get(80, 0.0)))),
     ]
-    for row_index, (left_label, depth_label) in enumerate(row_templates):
-        indent = " " * row_index
-        row_parts = []
-        for angle, distance, colour in columns:
-            closeness = 1.0 - max(0.0, min(1.0, distance / max_distance))
-            threshold = 0.18 + row_index * 0.18
-            glyph = "█" if closeness >= threshold else "·"
-            if angle == 0 and glyph == "·":
-                glyph = "^" if row_index <= 1 else "│"
-            row_parts.append(f"{_ansi_fg(colour)}{glyph * 3}{ANSI_RESET}")
-        lane_rows.append(f"{indent}{left_label:<7} /{' '.join(row_parts)}\\ {depth_label}")
 
-    footer_colour = _tui_distance_colour(controller.sanitize_distance(scan.get(0, 0.0)), controller.config)
-    car_line = f"        {' ' * 3}{_ansi_fg(footer_colour)}[CAR]{ANSI_RESET}"
-    nose_line = f"         {' ' * 2}{_ansi_fg((200, 200, 220))}/\\{ANSI_RESET}"
-    front_distance = controller.sanitize_distance(scan.get(0, 0.0))
-    legend = f"left sweep                         right sweep   front {front_distance:4.1f}cm"
-    return "\n".join([legend, *lane_rows, nose_line, car_line])
+    lines = ["view from driver seat"]
+    header_parts = []
+    meter_parts = []
+    for label, distance in sectors:
+        colour = _tui_distance_colour(distance, cfg)
+        state = _distance_state(distance, cfg)
+        header_parts.append(f"{_ansi_fg(colour)}{label:^20}{ANSI_RESET}")
+        meter_parts.append(f"{_ansi_fg(colour)}{state:^8} {distance:5.1f}cm{ANSI_RESET}")
+    lines.append("  ".join(header_parts))
+    lines.append("  ".join(meter_parts))
+
+    road_rows = []
+    for depth in (0.25, 0.45, 0.65, 0.85):
+        row_cells = []
+        for _, distance in sectors:
+            colour = _tui_distance_colour(distance, cfg)
+            ratio = max(0.0, min(1.0, distance / max_distance))
+            glyph = "█" if ratio < depth else "·"
+            if depth >= 0.65 and distance == sectors[1][1] and glyph == "·":
+                glyph = "^"
+            row_cells.append(f"{_ansi_fg(colour)}{glyph * 8}{ANSI_RESET}")
+        road_rows.append("        | " + " | ".join(row_cells) + " |")
+
+    lines.extend(road_rows)
+    lines.append("        |       drive lane       |")
+    lines.append("             \\      CAR      /")
+    return "\n".join(lines)
 
 
 def _box(title: str, lines: list[str], accent: Colour) -> list[str]:
