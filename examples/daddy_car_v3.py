@@ -25,6 +25,15 @@ from typing import Deque, Dict, Tuple
 Colour = Tuple[int, int, int]
 
 
+def _clamp_rgb_tuple(rgb: Tuple[float, float, float]) -> Tuple[int, int, int]:
+    """Convert hsv_to_rgb output to clamped integer RGB tuple (0-255)."""
+    return (
+        max(0, min(255, int(round(rgb[0] * 255)))),
+        max(0, min(255, int(round(rgb[1] * 255)))),
+        max(0, min(255, int(round(rgb[2] * 255)))),
+    )
+
+
 @dataclass(frozen=True)
 class AutonomousCarConfig:
     scan_angles: Tuple[int, ...] = (-80, -45, 0, 45, 80)
@@ -685,19 +694,19 @@ class AutonomousCarConfig:
     emotional_move_cooldown: float = 1.5                 # minimum seconds between emotional moves (was 2.0)
 
     # ─── Gen27: straight streak obsession ─────────────────────────────────
-    straight_streak_bonus_per_s: float = 6.0              # scoring bonus per second of straight driving
-    straight_streak_max_bonus: float = 60.0               # maximum straight streak scoring bonus
-    straight_streak_speed_boost: float = 0.05             # speed boost per second of straight streak
-    straight_streak_max_speed_boost: float = 0.18         # maximum speed boost from straight streak
-    straight_streak_heading_lock: float = 0.95            # heading lock strength at max streak
-    straight_streak_turn_penalty: float = 30.0            # penalty per 10° when streak is high
-    straight_streak_reset_threshold: float = 18.0         # degrees of turn that resets streak
+    straight_streak_bonus_per_s: float = 8.0              # scoring bonus per second of straight driving
+    straight_streak_max_bonus: float = 80.0               # maximum straight streak scoring bonus
+    straight_streak_speed_boost: float = 0.06             # speed boost per second of straight streak
+    straight_streak_max_speed_boost: float = 0.20         # maximum speed boost from straight streak
+    straight_streak_heading_lock: float = 0.97            # heading lock strength at max streak
+    straight_streak_turn_penalty: float = 40.0            # penalty per 10° when streak is high
+    straight_streak_reset_threshold: float = 15.0         # degrees of turn that resets streak
 
     # ─── Gen27: open space seeking ────────────────────────────────────────
-    open_space_seek_activation: float = 15.0              # seconds of no open space before seeking activates
-    open_space_seek_bonus: float = 30.0                   # scoring bonus for heading toward remembered open space
-    open_space_seek_expiry_s: float = 45.0                # how long to remember an open space direction
-    open_space_seek_max_entries: int = 12                 # max open space entries to track
+    open_space_seek_activation: float = 12.0              # seconds of no open space before seeking activates
+    open_space_seek_bonus: float = 35.0                   # scoring bonus for heading toward remembered open space
+    open_space_seek_expiry_s: float = 50.0                # how long to remember an open space direction
+    open_space_seek_max_entries: int = 15                 # max open space entries to track
 
     # ─── Gen27: exploration gap filling ───────────────────────────────────
     gap_fill_sector_count: int = 12                       # angular sectors for gap tracking
@@ -720,7 +729,71 @@ class AutonomousCarConfig:
     open_space_joy_duration: float = 1.2                   # duration of open space joy
     gap_fill_satisfaction_duration: float = 0.8            # duration of gap fill satisfaction
     corner_escape_relief_duration: float = 0.6             # duration of corner escape relief
-    emotional_move_cooldown: float = 1.2                   # minimum seconds between emotional moves (was 1.5)
+    emotional_move_cooldown: float = 1.0                   # minimum seconds between emotional moves (was 1.2)
+
+    # ─── Gen28: adaptive corridor memory ──────────────────────────────────
+    corridor_memory_max: int = 20                           # max corridor path entries to remember
+    corridor_memory_expiry_s: float = 60.0                  # seconds before corridor memory expires
+    corridor_path_bonus: float = 25.0                       # scoring bonus for heading matching remembered corridor
+    corridor_path_decay: float = 0.999                      # per-loop decay for corridor memory salience
+    corridor_quality_gain: float = 0.15                     # how fast corridor quality updates per traversal
+    corridor_min_quality: float = 0.3                       # minimum quality to keep a corridor entry
+
+    # ─── Gen28: enhanced straight-line cruise ─────────────────────────────
+    straight_cruise_activation_distance: float = 50.0       # front distance to enter straight cruise
+    straight_cruise_min_side: float = 35.0                  # min side clearance for straight cruise
+    straight_cruise_heading_lock: float = 0.95              # heading lock strength in straight cruise
+    straight_cruise_speed_boost: float = 0.08               # extra speed in straight cruise
+    straight_cruise_max_duration: float = 15.0              # max seconds in straight cruise
+    straight_cruise_graceful_exit: float = 30.0             # front distance to gracefully exit
+    straight_cruise_momentum_gain: float = 0.10             # momentum build rate per second
+    straight_cruise_momentum_max: float = 1.0               # max straight cruise momentum
+    straight_cruise_momentum_decay: float = 0.92            # decay when turning
+    straight_cruise_lane_keeping: float = 0.22              # lane-keeping correction strength
+    straight_cruise_turn_penalty: float = 50.0              # penalty per 10° turn when in straight cruise
+
+    # ─── Gen28: room boundary intelligence ────────────────────────────────
+    room_boundary_approach_slowdown: float = 0.40           # speed reduction factor near boundaries
+    room_boundary_distance: float = 40.0                    # distance to room boundary to trigger avoidance
+    room_boundary_avoidance_gain: float = 0.30              # steering gain away from boundary
+    room_boundary_scan_urgency: float = 0.5                 # scan interval multiplier near boundary
+    room_centering_bonus: float = 15.0                      # bonus for heading toward room center
+
+    # ─── Gen28: intelligent recovery ──────────────────────────────────────
+    recovery_learning_rate: float = 0.20                    # how fast recovery outcomes update learned patterns
+    recovery_pattern_window: int = 10                       # recent recoveries to track patterns
+    recovery_pattern_bonus: float = 12.0                    # bonus for using historically successful recovery
+    recovery_alternate_threshold: float = 0.15               # min improvement to switch recovery strategy
+
+    # ─── Gen28: new emotional moves ───────────────────────────────────────
+    corridor_cruise_duration: float = 1.2                   # duration of corridor cruise move
+    boundary_relief_duration: float = 0.8                   # duration of boundary relief move
+    straight_cruise_joy_duration: float = 1.0               # duration of straight cruise joy move
+    smart_recovery_triumph_duration: float = 0.8            # duration of smart recovery triumph move
+
+    # ─── Gen30: ultimate robustness and speed ─────────────────────────────
+    # Enhanced straight-line obsession
+    straight_line_obsession_bonus: float = 12.0              # even stronger bonus per second straight
+    straight_line_obsession_max: float = 100.0               # maximum bonus cap
+    straight_line_heading_lock_max: float = 0.98            # near-perfect heading lock
+    straight_line_turn_resistance: float = 60.0              # extreme penalty for turns
+    straight_line_activation_time: float = 0.3              # activate bonus faster (seconds)
+    
+    # Performance monitoring
+    performance_monitoring_enabled: bool = True               # enable performance tracking
+    max_loop_time_ms: float = 100.0                         # maximum acceptable loop time
+    throttle_on_overload: bool = True                       # reduce speed if overloaded
+    overload_recovery_time: float = 2.0                     # seconds to recover from overload
+    
+    # Crash recovery
+    crash_recovery_enabled: bool = True                     # enable crash detection/recovery
+    crash_recovery_attempts: int = 3                       # max recovery attempts
+    crash_recovery_backoff_s: float = 1.0                   # backoff between attempts
+    
+    # Navigation intelligence
+    predictive_path_planning: bool = True                   # enable path prediction
+    path_planning_horizon: int = 5                          # steps to look ahead
+    adaptive_speed_profile: bool = True                     # speed adapts to terrain
 
 @dataclass(frozen=True)
 class MotionCommand:
@@ -1116,6 +1189,40 @@ class AutonomousCarController:
     consecutive_plan_errors: int = field(default=0)
     last_plan_error_time: float = field(default=-math.inf)
 
+    # Gen28: adaptive corridor memory
+    corridor_memory: Dict[int, Tuple[float, float]] = field(default_factory=dict)  # heading -> (quality, last_used_time)
+    corridor_memory_quality: Dict[int, float] = field(default_factory=dict)  # heading -> traversal quality
+
+    # Gen28: straight cruise state
+    straight_cruise_active: bool = field(default=False)
+    straight_cruise_start_time: float = field(default=-math.inf)
+    straight_cruise_heading: int = field(default=0)
+    straight_cruise_momentum: float = field(default=0.0)
+    straight_cruise_momentum_start: float = field(default=-math.inf)
+
+    # Gen28: room boundary awareness
+    room_boundary_detected: bool = field(default=False)
+    room_boundary_angle: int = field(default=0)
+    room_boundary_time: float = field(default=-math.inf)
+    room_center_heading: int = field(default=0)
+
+    # Gen28: intelligent recovery
+    recovery_pattern_history: Deque[Tuple[str, float]] = field(init=False)  # (strategy, outcome)
+    recovery_success_rates: Dict[str, float] = field(default_factory=dict)  # strategy -> success rate
+    recovery_attempts: Dict[str, int] = field(default_factory=dict)  # strategy -> attempt count
+
+    # Gen30: ultimate robustness and speed
+    straight_line_obsession_active: bool = field(default=False)
+    straight_line_obsession_start: float = field(default=-math.inf)
+    straight_line_obsession_bonus_current: float = field(default=0.0)
+    performance_loop_times: Deque[float] = field(init=False)  # track loop execution times
+    performance_overload_detected: bool = field(default=False)
+    performance_overload_time: float = field(default=-math.inf)
+    crash_recovery_count: int = field(default=0)
+    last_crash_recovery_time: float = field(default=-math.inf)
+    predictive_path_cache: Dict[int, float] = field(default_factory=dict)  # heading -> predicted score
+    last_predictive_update: float = field(default=-math.inf)
+
     def __post_init__(self):
         self.front_history = deque(maxlen=self.config.front_history_size)
         self.recent_turns = deque(maxlen=self.config.recent_turn_memory)
@@ -1156,6 +1263,9 @@ class AutonomousCarController:
         self.recent_emotional_moves = deque(maxlen=self.config.emotional_move_diversity_window)
         self.emotional_memory = deque(maxlen=self.config.emotional_memory_window)
         self.open_space_seek_entries = deque(maxlen=self.config.open_space_seek_max_entries)
+        self.recovery_pattern_history = deque(maxlen=self.config.recovery_pattern_window)
+        # Gen30: performance monitoring
+        self.performance_loop_times = deque(maxlen=10)
         self._init_scoring_weights()
         for i in range(self.config.spatial_memory_cells):
             self.spatial_memory[i] = 0.0
@@ -1997,6 +2107,16 @@ class AutonomousCarController:
 
         # Gen27: gap fill bonus (explores unvisited angular sectors)
         score += self.gap_fill_bonus_for_angle(angle) * self.get_scoring_weight("gap_fill")
+
+        # Gen28: corridor memory bonus
+        if now is not None:
+            score += self.corridor_path_bonus_for_heading(angle, now) * self.get_scoring_weight("corridor_memory")
+
+        # Gen28: room centering bonus
+        score += self.room_centering_bonus_for_heading(angle) * self.get_scoring_weight("room_centering")
+
+        # Gen28: straight cruise turn penalty
+        score += self.straight_cruise_turn_penalty_for_heading(angle)
 
         return score
 
@@ -3446,7 +3566,8 @@ class AutonomousCarController:
                       "dead_zone", "straight_momentum",
                       "topological", "vfh", "exploration_return", "exploration_direction",
                        "highway", "frontier_chain",
-                       "straight_streak", "open_space_seek", "gap_fill"):
+                       "straight_streak", "open_space_seek", "gap_fill",
+                       "corridor_memory", "room_centering"):
             self.scoring_term_weights[term] = 1.0
 
     def record_scoring_reward(self, term: str, reward: float):
@@ -4026,7 +4147,7 @@ class AutonomousCarController:
             max(-1.0, min(1.0, speed * (1.0 + turn_steer))),
             max(-1.0, min(1.0, speed * (1.0 - turn_steer))),
             heading,
-            (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255))
+            _clamp_rgb_tuple(rgb)
         )
 
     def start_boustrophedon(self, now: float):
@@ -4558,7 +4679,7 @@ class AutonomousCarController:
             max(-1.0, min(1.0, speed * (1.0 + turn_steer))),
             max(-1.0, min(1.0, speed * (1.0 - turn_steer))),
             heading,
-            (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255))
+            _clamp_rgb_tuple(rgb)
         )
 
     def start_room_sweep(self, now: float):
@@ -4634,7 +4755,7 @@ class AutonomousCarController:
             max(-1.0, min(1.0, left_s)),
             max(-1.0, min(1.0, right_s)),
             int(math.sin(self.spiral_angle) * 30),
-            (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)),
+            _clamp_rgb_tuple(rgb),
         )
 
     # ─── Gen19: path memory ───────────────────────────────────────────────
@@ -4705,7 +4826,7 @@ class AutonomousCarController:
             heading = 30 if direction > 0 else -30
             rgb = hsv_to_rgb(0.12 + 0.05 * math.sin(elapsed * 10), 0.9, 0.7 + 0.3 * math.sin(elapsed * 8))
             return MotionCommand("victory_dance", speed * (1.0 + direction * 0.3), speed * (1.0 - direction * 0.3), heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "happy_wiggle":
             dur = self.config.happy_wiggle_duration
@@ -4718,7 +4839,7 @@ class AutonomousCarController:
             heading = 20 if direction > 0 else -20
             rgb = hsv_to_rgb(0.35 + 0.1 * math.sin(elapsed * 6), 0.8, 0.6 + 0.4 * math.sin(elapsed * 6))
             return MotionCommand("happy_wiggle", speed * (1.0 + direction * 0.3), speed * (1.0 - direction * 0.3), heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "frustrated_shimmy":
             dur = self.config.frustrated_shimmy_duration
@@ -4744,7 +4865,7 @@ class AutonomousCarController:
             rgb = hsv_to_rgb(hue, 0.9, 0.6 + 0.4 * progress)
             return MotionCommand(
                 "confident_strut", speed, speed, 0,
-                (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255))
+                _clamp_rgb_tuple(rgb)
             )
 
         elif move_type == "curious_tilt":
@@ -4757,7 +4878,7 @@ class AutonomousCarController:
             speed = 0.2
             rgb = hsv_to_rgb(0.55, 0.7, 0.5 + 0.3 * math.sin(elapsed * 5))
             return MotionCommand("curious_tilt", speed, speed, int(tilt),
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "excited_bounce":
             dur = self.config.excited_bounce_duration
@@ -4773,7 +4894,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * 1.1)),
                                  max(-1.0, min(1.0, speed * 0.9)),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "contemplative_circle":
             dur = self.config.contemplative_circle_duration
@@ -4790,7 +4911,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, left_s)),
                                  max(-1.0, min(1.0, right_s)),
                                  int(math.sin(angle) * 20),
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "celebration_spin":
             dur = self.config.celebration_spin_duration
@@ -4805,7 +4926,7 @@ class AutonomousCarController:
                                  speed if direction > 0 else -speed,
                                  -speed if direction > 0 else speed,
                                  int(direction * 60 * progress),
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "surprise_shake":
             dur = self.config.surprise_shake_duration
@@ -4838,7 +4959,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + jitter * 3))),
                                  max(-1.0, min(1.0, speed * (1.0 - jitter * 3))),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "triumphant_arc":
             dur = self.config.triumphant_arc_duration
@@ -4857,7 +4978,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, left_s)),
                                  max(-1.0, min(1.0, right_s)),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "confused_figure8":
             dur = self.config.confused_figure8_duration
@@ -4876,7 +4997,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, left_s)),
                                  max(-1.0, min(1.0, right_s)),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "relaxed_cruise":
             dur = self.config.relaxed_cruise_duration
@@ -4890,7 +5011,7 @@ class AutonomousCarController:
             rgb = hsv_to_rgb(hue, 0.6, 0.5 + 0.3 * math.sin(elapsed * 2))
             return MotionCommand("relaxed_cruise",
                                  speed, speed, heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "alert_scan":
             dur = self.config.alert_scan_duration
@@ -4907,7 +5028,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + sweep))),
                                  max(-1.0, min(1.0, speed * (1.0 - sweep))),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         # Gen21: new emotional moves
         elif move_type == "satisfied_purr":
@@ -4923,7 +5044,7 @@ class AutonomousCarController:
             rgb = hsv_to_rgb(warm, 0.7, 0.5 + 0.3 * math.sin(elapsed * 6.0))
             return MotionCommand("satisfied_purr",
                                  speed, speed, heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "determined_lunge":
             dur = self.config.determined_lunge_duration
@@ -4939,7 +5060,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * 1.1)),
                                  max(-1.0, min(1.0, speed * 0.9)),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "grateful_bow":
             dur = self.config.grateful_bow_duration
@@ -4953,7 +5074,7 @@ class AutonomousCarController:
             rgb = hsv_to_rgb(0.12, 0.8, 0.5 + 0.4 * math.sin(progress * math.pi))
             return MotionCommand("grateful_bow",
                                  speed, speed, heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "victory_lap":
             dur = self.config.victory_lap_duration
@@ -4972,7 +5093,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, left_s)),
                                  max(-1.0, min(1.0, right_s)),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "curious_sniff":
             dur = self.config.curious_sniff_duration
@@ -4988,7 +5109,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * 1.1)),
                                  max(-1.0, min(1.0, speed * 0.9)),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "gentle_weave":
             dur = self.config.gentle_weave_duration
@@ -5004,7 +5125,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + weave))),
                                  max(-1.0, min(1.0, speed * (1.0 - weave))),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "happy_hop":
             dur = self.config.happy_hop_duration
@@ -5020,7 +5141,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * 1.1)),
                                  max(-1.0, min(1.0, speed * 0.9)),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         # Gen22: new emotional moves
         elif move_type == "zoomies":
@@ -5038,7 +5159,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + burst * 0.5))),
                                  max(-1.0, min(1.0, speed * (1.0 - burst * 0.5))),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "play_bow":
             dur = self.config.play_bow_duration
@@ -5054,7 +5175,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * 1.1)),
                                  max(-1.0, min(1.0, speed * 0.9)),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "peek_a_boo":
             dur = self.config.peek_a_boo_duration
@@ -5070,7 +5191,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * 1.1)),
                                  max(-1.0, min(1.0, speed * 0.9)),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "stalk_mode":
             dur = self.config.stalk_mode_duration
@@ -5086,7 +5207,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + math.sin(elapsed * 8) * 0.1))),
                                  max(-1.0, min(1.0, speed * (1.0 - math.sin(elapsed * 8) * 0.1))),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "greeting":
             dur = self.config.greeting_duration
@@ -5103,7 +5224,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + wiggle))),
                                  max(-1.0, min(1.0, speed * (1.0 - wiggle))),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "sleep_mode":
             dur = self.config.sleep_mode_duration
@@ -5119,7 +5240,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed)),
                                  max(-1.0, min(1.0, speed)),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "backing_dance":
             dur = self.config.backing_dance_duration
@@ -5136,7 +5257,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + dance * 0.3))),
                                  max(-1.0, min(1.0, speed * (1.0 - dance * 0.3))),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "serpentine":
             dur = self.config.serpentine_duration
@@ -5153,7 +5274,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + wave))),
                                  max(-1.0, min(1.0, speed * (1.0 - wave))),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         # Gen23: new emotional moves
         elif move_type == "explorer_pride":
@@ -5171,7 +5292,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + arc * 0.3))),
                                  max(-1.0, min(1.0, speed * (1.0 - arc * 0.3))),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "mapping_joy":
             dur = self.config.mapping_joy_duration
@@ -5188,7 +5309,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + wave))),
                                  max(-1.0, min(1.0, speed * (1.0 - wave))),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "corridor_dance":
             dur = self.config.corridor_dance_duration
@@ -5205,7 +5326,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + dance))),
                                  max(-1.0, min(1.0, speed * (1.0 - dance))),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "open_space_celebration":
             dur = self.config.open_space_celebration_duration
@@ -5222,7 +5343,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + burst * 0.4))),
                                  max(-1.0, min(1.0, speed * (1.0 - burst * 0.4))),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "wall_caress":
             dur = self.config.wall_caress_duration
@@ -5239,7 +5360,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + caress))),
                                  max(-1.0, min(1.0, speed * (1.0 - caress))),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "discovery_spin":
             dur = self.config.discovery_spin_duration
@@ -5256,7 +5377,7 @@ class AutonomousCarController:
                                  speed * direction if direction > 0 else -speed,
                                  -speed * direction if direction > 0 else speed,
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         # Gen24: new emotional moves
         elif move_type == "curious_probe":
@@ -5273,7 +5394,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * 1.1)),
                                  max(-1.0, min(1.0, speed * 0.9)),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "excited_wiggle":
             dur = self.config.excited_wiggle_duration
@@ -5289,7 +5410,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + wiggle * 0.3))),
                                  max(-1.0, min(1.0, speed * (1.0 - wiggle * 0.3))),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "contemplative_pause":
             dur = self.config.contemplative_pause_duration
@@ -5304,7 +5425,7 @@ class AutonomousCarController:
             rgb = hsv_to_rgb(hue, 0.4, 0.2 + 0.2 * math.sin(progress * math.pi))
             return MotionCommand("contemplative_pause",
                                  speed, speed, heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "confident_cruise":
             dur = self.config.confident_cruise_duration
@@ -5318,7 +5439,7 @@ class AutonomousCarController:
             rgb = hsv_to_rgb(hue, 0.7, 0.6 + 0.3 * math.sin(elapsed * 3))
             return MotionCommand("confident_cruise",
                                  speed, speed, heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "explorer_sprint":
             dur = self.config.explorer_sprint_duration
@@ -5335,7 +5456,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * 1.05)),
                                  max(-1.0, min(1.0, speed * 0.95)),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "cautious_approach":
             dur = self.config.cautious_approach_duration
@@ -5351,7 +5472,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * 1.1)),
                                  max(-1.0, min(1.0, speed * 0.9)),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "joyful_bounce":
             dur = self.config.joyful_bounce_duration
@@ -5367,7 +5488,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * 1.1)),
                                  max(-1.0, min(1.0, speed * 0.9)),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "discovery_celebration":
             dur = self.config.discovery_celebration_duration
@@ -5384,7 +5505,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + spin * 0.3))),
                                  max(-1.0, min(1.0, speed * (1.0 - spin * 0.3))),
                                  heading,
-                                  (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                  _clamp_rgb_tuple(rgb))
 
         # Gen25: new emotional moves
         elif move_type == "joyful_spin":
@@ -5402,7 +5523,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + 0.3 * math.sin(spin)))),
                                  max(-1.0, min(1.0, speed * (1.0 - 0.3 * math.sin(spin)))),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "curious_weave":
             dur = self.config.curious_weave_duration
@@ -5418,7 +5539,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + weave * 2))),
                                  max(-1.0, min(1.0, speed * (1.0 - weave * 2))),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "excited_dash":
             dur = self.config.excited_dash_duration
@@ -5435,7 +5556,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * 1.05)),
                                  max(-1.0, min(1.0, speed * 0.95)),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "peaceful_glide":
             dur = self.config.peaceful_glide_duration
@@ -5450,7 +5571,7 @@ class AutonomousCarController:
             rgb = hsv_to_rgb(hue, 0.5, 0.4 + 0.3 * math.sin(progress * math.pi))
             return MotionCommand("peaceful_glide",
                                  speed, speed, heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "mischievous_zigzag":
             dur = self.config.mischievous_zigzag_duration
@@ -5467,7 +5588,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + zigzag))),
                                  max(-1.0, min(1.0, speed * (1.0 - zigzag))),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "proud_parade":
             dur = self.config.proud_parade_duration
@@ -5484,7 +5605,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + sway * 0.5))),
                                  max(-1.0, min(1.0, speed * (1.0 - sway * 0.5))),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "wonder_gaze":
             dur = self.config.wonder_gaze_duration
@@ -5501,7 +5622,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * 1.1)),
                                  max(-1.0, min(1.0, speed * 0.9)),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "energetic_hop":
             dur = self.config.energetic_hop_duration
@@ -5518,7 +5639,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + hop * 0.5))),
                                  max(-1.0, min(1.0, speed * (1.0 - hop * 0.5))),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
     # ─── Gen25: Cruise corridor ───────────────────────────────────────────
 
@@ -5621,7 +5742,7 @@ class AutonomousCarController:
             max(-1.0, min(1.0, speed * (1.0 + steer))),
             max(-1.0, min(1.0, speed * (1.0 - steer))),
             heading,
-            (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255))
+            _clamp_rgb_tuple(rgb)
         )
 
     def start_wander(self, now: float):
@@ -5675,7 +5796,7 @@ class AutonomousCarController:
             max(-1.0, min(1.0, speed * (1.0 + steer))),
             max(-1.0, min(1.0, speed * (1.0 - steer))),
             heading,
-            (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255))
+            _clamp_rgb_tuple(rgb)
         )
 
     def start_edge_patrol(self, now: float):
@@ -5854,7 +5975,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + wave * 0.4))),
                                  max(-1.0, min(1.0, speed * (1.0 - wave * 0.4))),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "gratitude":
             dur = self.config.gratitude_duration
@@ -5868,7 +5989,7 @@ class AutonomousCarController:
             hue = 0.12 + 0.05 * math.sin(progress * math.pi * 2)
             rgb = hsv_to_rgb(hue, 0.8, 0.5 + 0.4 * math.sin(progress * math.pi))
             return MotionCommand("gratitude", speed, speed, heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "relief":
             dur = self.config.relief_duration
@@ -5885,7 +6006,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * 1.05)),
                                  max(-1.0, min(1.0, speed * 0.95)),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "wonder":
             dur = self.config.wonder_duration
@@ -5902,7 +6023,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * 1.1)),
                                  max(-1.0, min(1.0, speed * 0.9)),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "playful_dart":
             dur = self.config.playful_dart_duration
@@ -5919,7 +6040,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + dart * 0.3))),
                                  max(-1.0, min(1.0, speed * (1.0 - dart * 0.3))),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "victory_bow":
             dur = self.config.victory_bow_duration
@@ -5936,7 +6057,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * 1.05)),
                                  max(-1.0, min(1.0, speed * 0.95)),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "contented_sway":
             dur = self.config.contented_sway_duration
@@ -5951,7 +6072,7 @@ class AutonomousCarController:
             rgb = hsv_to_rgb(hue, 0.5, 0.4 + 0.3 * math.sin(progress * math.pi))
             return MotionCommand("contented_sway",
                                  speed, speed, heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "triumphant_burst":
             dur = self.config.triumphant_burst_duration
@@ -5968,7 +6089,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * 1.05)),
                                  max(-1.0, min(1.0, speed * 0.95)),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
     # ─── Gen19: enhanced mood lighting ────────────────────────────────────
 
@@ -6273,39 +6394,144 @@ class AutonomousCarController:
             return
         dt = now - self.straight_streak_last_update
         self.straight_streak_last_update = now
-        if abs(heading) < 10 and front_distance > self.config.cruise_distance:
+        if abs(heading) < 8 and front_distance > self.config.cruise_distance:
             self.straight_streak_seconds += dt
             if self.straight_streak_seconds > self.straight_streak_best:
                 self.straight_streak_best = self.straight_streak_seconds
         elif abs(heading) > self.config.straight_streak_reset_threshold:
             self.straight_streak_seconds = 0.0
         else:
-            self.straight_streak_seconds = max(0.0, self.straight_streak_seconds - dt * 0.5)
+            self.straight_streak_seconds = max(0.0, self.straight_streak_seconds - dt * 0.3)
 
     def get_straight_streak_bonus(self, angle: int) -> float:
         """Scoring bonus proportional to straight streak duration."""
-        if self.straight_streak_seconds < 1.0:
+        if self.straight_streak_seconds < 0.5:
             return 0.0
-        if abs(angle) < 10:
+        if abs(angle) < 8:
             bonus = self.straight_streak_seconds * self.config.straight_streak_bonus_per_s
             return min(self.config.straight_streak_max_bonus, bonus)
         turn_penalty = abs(angle) / 10.0 * self.config.straight_streak_turn_penalty
-        streak_ratio = min(1.0, self.straight_streak_seconds / 5.0)
+        streak_ratio = min(1.0, self.straight_streak_seconds / 4.0)
         return -turn_penalty * streak_ratio
 
     def get_straight_streak_speed_boost(self) -> float:
         """Speed boost proportional to straight streak duration."""
-        if self.straight_streak_seconds < 2.0:
+        if self.straight_streak_seconds < 1.0:
             return 0.0
         boost = self.straight_streak_seconds * self.config.straight_streak_speed_boost
         return min(self.config.straight_streak_max_speed_boost, boost)
 
     def get_straight_streak_heading_lock(self) -> float:
         """How strongly to resist turns based on straight streak."""
-        if self.straight_streak_seconds < 2.0:
+        if self.straight_streak_seconds < 1.0:
             return 0.0
-        ratio = min(1.0, (self.straight_streak_seconds - 2.0) / 8.0)
+        ratio = min(1.0, (self.straight_streak_seconds - 1.0) / 6.0)
         return self.config.straight_streak_heading_lock * ratio
+
+    # ─── Gen30: Ultimate straight-line obsession ──────────────────────────
+
+    def update_straight_line_obsession(self, heading: int, front_distance: float, now: float):
+        """Track and reward sustained straight-line driving with extreme prejudice."""
+        if front_distance <= self.config.cruise_distance:
+            self.straight_line_obsession_active = False
+            self.straight_line_obsession_start = -math.inf
+            self.straight_line_obsession_bonus_current = 0.0
+            return
+        
+        if abs(heading) < 5:  # Very strict straight threshold
+            if not self.straight_line_obsession_active:
+                self.straight_line_obsession_active = True
+                self.straight_line_obsession_start = now
+            duration = now - self.straight_line_obsession_start
+            if duration >= self.config.straight_line_activation_time:
+                # Build bonus rapidly
+                self.straight_line_obsession_bonus_current = min(
+                    self.config.straight_line_obsession_max,
+                    duration * self.config.straight_line_obsession_bonus
+                )
+        else:
+            # Turn detected - rapidly decay bonus
+            self.straight_line_obsession_bonus_current *= 0.7
+            if self.straight_line_obsession_bonus_current < 5.0:
+                self.straight_line_obsession_active = False
+                self.straight_line_obsession_start = -math.inf
+                self.straight_line_obsession_bonus_current = 0.0
+
+    def get_straight_line_obsession_bonus(self, angle: int) -> float:
+        """Get scoring bonus favoring straight headings, with extreme turn penalties."""
+        if not self.straight_line_obsession_active or self.straight_line_obsession_bonus_current < 10.0:
+            return 0.0
+        if abs(angle) < 5:
+            return self.straight_line_obsession_bonus_current
+        # Severe penalty for any turn when obsessed with straight
+        turn_penalty = abs(angle) / 10.0 * self.config.straight_line_turn_resistance
+        return -turn_penalty * (self.straight_line_obsession_bonus_current / self.config.straight_line_obsession_max)
+
+    def get_straight_line_heading_lock(self) -> float:
+        """Maximum heading lock strength when obsessed with straight."""
+        if not self.straight_line_obsession_active:
+            return 0.0
+        ratio = min(1.0, self.straight_line_obsession_bonus_current / self.config.straight_line_obsession_max)
+        return self.config.straight_line_heading_lock_max * ratio
+
+    def should_resist_turn_gen30(self, proposed_heading: int, current_heading: int) -> bool:
+        """Determine if we should resist a turn based on straight obsession."""
+        if not self.straight_line_obsession_active:
+            return False
+        if self.straight_line_obsession_bonus_current < 20.0:
+            return False
+        # If currently going straight and proposed heading is a turn, resist it
+        if abs(current_heading) < 5 and abs(proposed_heading) > 15:
+            return True
+        return False
+
+    # ─── Gen30: Performance monitoring ────────────────────────────────────
+
+    def record_loop_time(self, loop_time_ms: float):
+        """Track loop execution time for performance monitoring."""
+        if not self.config.performance_monitoring_enabled:
+            return
+        self.performance_loop_times.append(loop_time_ms)
+        # Check for overload condition
+        if loop_time_ms > self.config.max_loop_time_ms:
+            self.performance_overload_detected = True
+            self.performance_overload_time = time.monotonic()
+
+    def is_performance_overload(self) -> bool:
+        """Check if we're currently in overload condition."""
+        if not self.performance_overload_detected:
+            return False
+        # Clear overload after recovery time
+        if time.monotonic() - self.performance_overload_time > self.config.overload_recovery_time:
+            self.performance_overload_detected = False
+            return False
+        return True
+
+    def get_speed_multiplier_for_performance(self) -> float:
+        """Reduce speed if performance is degraded."""
+        if not self.config.throttle_on_overload:
+            return 1.0
+        if not self.is_performance_overload():
+            return 1.0
+        # Reduce speed by 25% during overload
+        return 0.75
+
+    def record_crash_recovery(self, now: float):
+        """Record a crash recovery event."""
+        if not self.config.crash_recovery_enabled:
+            return
+        self.crash_recovery_count += 1
+        self.last_crash_recovery_time = now
+
+    def should_attempt_crash_recovery(self, now: float) -> bool:
+        """Check if we should attempt crash recovery."""
+        if not self.config.crash_recovery_enabled:
+            return False
+        if self.crash_recovery_count >= self.config.crash_recovery_attempts:
+            return False
+        if now - self.last_crash_recovery_time < self.config.crash_recovery_backoff_s:
+            return False
+        return True
 
     # ─── Gen27: Open space seeking ────────────────────────────────────────
 
@@ -6464,7 +6690,7 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * (1.0 + wave * 0.3))),
                                  max(-1.0, min(1.0, speed * (1.0 - wave * 0.3))),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "open_space_joy":
             dur = self.config.open_space_joy_duration
@@ -6478,7 +6704,7 @@ class AutonomousCarController:
             hue = 0.35 + 0.1 * math.sin(elapsed * 2)
             rgb = hsv_to_rgb(hue, 0.6, 0.5 + 0.3 * math.sin(progress * math.pi))
             return MotionCommand("open_space_joy", speed, speed, heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "gap_fill_satisfaction":
             dur = self.config.gap_fill_satisfaction_duration
@@ -6492,7 +6718,7 @@ class AutonomousCarController:
             hue = 0.25 + 0.08 * math.sin(elapsed * 3)
             rgb = hsv_to_rgb(hue, 0.7, 0.5 + 0.3 * math.sin(progress * math.pi))
             return MotionCommand("gap_fill_satisfaction", speed, speed, heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
 
         elif move_type == "corner_escape_relief":
             dur = self.config.corner_escape_relief_duration
@@ -6509,11 +6735,283 @@ class AutonomousCarController:
                                  max(-1.0, min(1.0, speed * 1.05)),
                                  max(-1.0, min(1.0, speed * 0.95)),
                                  heading,
-                                 (int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)))
+                                 _clamp_rgb_tuple(rgb))
+
+        return None
+
+    # ─── Gen28: Adaptive corridor memory ──────────────────────────────────
+
+    def update_corridor_memory(self, heading: int, front_distance: float, now: float) -> None:
+        """Track corridor path quality per heading direction."""
+        if abs(heading) > 30:
+            return
+        quality = min(1.0, front_distance / self.config.cruise_distance)
+        self.corridor_memory[heading] = (quality, now)
+        old_quality = self.corridor_memory_quality.get(heading, 0.0)
+        self.corridor_memory_quality[heading] = (
+            old_quality * (1.0 - self.config.corridor_quality_gain)
+            + quality * self.config.corridor_quality_gain
+        )
+
+    def decay_corridor_memory(self, now: float) -> None:
+        """Decay corridor memory entries and remove stale/low-quality ones."""
+        for h in list(self.corridor_memory.keys()):
+            quality, last_time = self.corridor_memory[h]
+            age = now - last_time
+            if age > self.config.corridor_memory_expiry_s:
+                del self.corridor_memory[h]
+                self.corridor_memory_quality.pop(h, None)
+                continue
+            decay = self.config.corridor_path_decay ** (age * 10)
+            self.corridor_memory[h] = (quality * decay, last_time)
+            if self.corridor_memory_quality.get(h, 0.0) < self.config.corridor_min_quality:
+                self.corridor_memory.pop(h, None)
+                self.corridor_memory_quality.pop(h, None)
+
+    def corridor_path_bonus_for_heading(self, heading: int, now: float) -> float:
+        """Return scoring bonus for heading matching a remembered good corridor path."""
+        best_bonus = 0.0
+        for h, (quality, last_time) in self.corridor_memory.items():
+            angle_diff = abs(heading - h)
+            if angle_diff > 180:
+                angle_diff = 360 - angle_diff
+            if angle_diff < 20:
+                age = now - last_time
+                age_factor = max(0.0, 1.0 - age / self.config.corridor_memory_expiry_s)
+                bonus = self.config.corridor_path_bonus * quality * age_factor * (1.0 - angle_diff / 20.0)
+                best_bonus = max(best_bonus, bonus)
+        return best_bonus
+
+    # ─── Gen28: Enhanced straight-line cruise ─────────────────────────────
+
+    def update_straight_cruise(self, heading: int, front_distance: float, now: float, speed: float) -> None:
+        """Update straight cruise mode state."""
+        left_side = self.sanitize_distance(self.last_scan.get(-45, 0.0))
+        right_side = self.sanitize_distance(self.last_scan.get(45, 0.0))
+        if (self.straight_cruise_active
+                and (front_distance < self.config.straight_cruise_graceful_exit
+                     or now - self.straight_cruise_start_time > self.config.straight_cruise_max_duration
+                     or abs(heading) > 25)):
+            self.straight_cruise_active = False
+            return
+        if (not self.straight_cruise_active
+                and front_distance > self.config.straight_cruise_activation_distance
+                and left_side > self.config.straight_cruise_min_side
+                and right_side > self.config.straight_cruise_min_side
+                and abs(heading) < 15):
+            self.straight_cruise_active = True
+            self.straight_cruise_start_time = now
+            self.straight_cruise_heading = heading
+            self.straight_cruise_momentum = 0.0
+            self.straight_cruise_momentum_start = now
+
+    def update_straight_cruise_momentum(self, heading: int, now: float, front_distance: float) -> None:
+        """Build momentum when going straight in straight cruise mode."""
+        if not self.straight_cruise_active:
+            self.straight_cruise_momentum *= self.config.straight_cruise_momentum_decay
+            return
+        if abs(heading) < 10 and front_distance > self.config.straight_cruise_activation_distance:
+            elapsed = now - self.straight_cruise_momentum_start
+            self.straight_cruise_momentum = min(
+                self.config.straight_cruise_momentum_max,
+                self.straight_cruise_momentum + self.config.straight_cruise_momentum_gain * elapsed
+            )
+        else:
+            self.straight_cruise_momentum *= self.config.straight_cruise_momentum_decay
+
+    def get_straight_cruise_momentum_speed_boost(self) -> float:
+        """Return speed boost from straight cruise momentum."""
+        if not self.straight_cruise_active:
+            return 0.0
+        return self.straight_cruise_momentum * self.config.straight_cruise_speed_boost * 0.5
+
+    def apply_straight_cruise_correction(self, steer: float, heading: int, front_distance: float) -> float:
+        """Apply heading lock correction for straight cruise mode."""
+        if not self.straight_cruise_active:
+            return steer
+        lock = self.config.straight_cruise_heading_lock
+        correction = -steer * lock * self.config.straight_cruise_lane_keeping
+        steer = max(-1.0, min(1.0, steer + correction))
+        steer *= (1.0 - lock * 0.25)
+        return steer
+
+    def straight_cruise_turn_penalty_for_heading(self, heading: int) -> float:
+        """Return turn penalty when in straight cruise mode."""
+        if not self.straight_cruise_active:
+            return 0.0
+        turn_degrees = abs(heading)
+        return -self.config.straight_cruise_turn_penalty * (turn_degrees / 10.0) * self.straight_cruise_momentum
+
+    # ─── Gen28: Room boundary intelligence ────────────────────────────────
+
+    def detect_room_boundary(self, front_distance: float, scan: Dict[int, float], now: float) -> None:
+        """Detect nearby room boundaries and compute center heading."""
+        boundary_detected = False
+        boundary_angle = 0
+        min_dist = float('inf')
+        for angle, dist in scan.items():
+            dist = self.sanitize_distance(dist)
+            if 0 < dist < self.config.room_boundary_distance and dist < min_dist:
+                min_dist = dist
+                boundary_detected = True
+                boundary_angle = angle
+        self.room_boundary_detected = boundary_detected
+        self.room_boundary_angle = boundary_angle
+        if boundary_detected:
+            self.room_boundary_time = now
+            self.room_center_heading = -boundary_angle
+        else:
+            if now - self.room_boundary_time > 5.0:
+                self.room_center_heading = 0
+
+    def room_boundary_avoidance_steer(self, steer: float, front_distance: float) -> float:
+        """Add steering correction to avoid room boundaries."""
+        if not self.room_boundary_detected:
+            return steer
+        avoidance = -math.copysign(self.config.room_boundary_avoidance_gain, self.room_boundary_angle)
+        steer = max(-1.0, min(1.0, steer + avoidance))
+        return steer
+
+    def room_centering_bonus_for_heading(self, heading: int) -> float:
+        """Return bonus for heading toward room center."""
+        if not self.room_boundary_detected or self.room_center_heading == 0:
+            return 0.0
+        angle_diff = abs(heading - self.room_center_heading)
+        if angle_diff > 180:
+            angle_diff = 360 - angle_diff
+        if angle_diff < 45:
+            return self.config.room_centering_bonus * (1.0 - angle_diff / 45.0)
+        return 0.0
+
+    # ─── Gen28: Intelligent recovery ──────────────────────────────────────
+
+    def record_recovery_outcome(self, strategy: str, outcome: float) -> None:
+        """Record the outcome of a recovery attempt for learning."""
+        self.recovery_pattern_history.append((strategy, outcome))
+        old_rate = self.recovery_success_rates.get(strategy, 0.5)
+        old_count = self.recovery_attempts.get(strategy, 0)
+        lr = self.config.recovery_learning_rate
+        self.recovery_success_rates[strategy] = old_rate * (1.0 - lr) + outcome * lr
+        self.recovery_attempts[strategy] = old_count + 1
+
+    def get_recovery_pattern_bonus(self, strategy: str) -> float:
+        """Return bonus for using a historically successful recovery strategy."""
+        rate = self.recovery_success_rates.get(strategy, 0.5)
+        count = self.recovery_attempts.get(strategy, 0)
+        if count < 2:
+            return 0.0
+        if rate > 0.5:
+            return self.config.recovery_pattern_bonus * (rate - 0.5) * 2.0
+        return 0.0
+
+    def select_best_recovery_strategy(self, available: list) -> str:
+        """Select the recovery strategy with highest historical success rate."""
+        best_strategy = available[0] if available else "wiggle"
+        best_rate = -1.0
+        for strategy in available:
+            rate = self.recovery_success_rates.get(strategy, 0.5)
+            count = self.recovery_attempts.get(strategy, 0)
+            if count >= 2 and rate > best_rate:
+                best_rate = rate
+                best_strategy = strategy
+        return best_strategy
+
+    # ─── Gen28: Emotional moves ───────────────────────────────────────────
+
+    def get_emotional_move_command_gen28(self, now: float) -> MotionCommand | None:
+        """Gen28: emotional move animations for new move types."""
+        if not self.emotional_move_active:
+            return None
+        elapsed = now - self.emotional_move_start
+        move_type = self.emotional_move_type
+
+        if move_type == "corridor_cruise":
+            dur = self.config.corridor_cruise_duration
+            if elapsed >= dur:
+                self.emotional_move_active = False
+                return None
+            progress = elapsed / dur
+            wave = math.sin(progress * math.pi * 3) * 0.08
+            speed = 0.4 + 0.15 * math.sin(progress * math.pi)
+            heading = int(wave * 10)
+            hue = 0.55 + 0.05 * math.sin(elapsed * 4)
+            rgb = hsv_to_rgb(hue, 0.7, 0.5 + 0.3 * math.sin(progress * math.pi))
+            return MotionCommand("corridor_cruise",
+                                 max(-1.0, min(1.0, speed * (1.0 + wave * 0.2))),
+                                 max(-1.0, min(1.0, speed * (1.0 - wave * 0.2))),
+                                 heading,
+                                 (max(0, min(255, int(round(rgb[0] * 255)))),
+                                  max(0, min(255, int(round(rgb[1] * 255)))),
+                                  max(0, min(255, int(round(rgb[2] * 255))))))
+
+        elif move_type == "boundary_relief":
+            dur = self.config.boundary_relief_duration
+            if elapsed >= dur:
+                self.emotional_move_active = False
+                return None
+            progress = elapsed / dur
+            breathe = math.sin(progress * math.pi * 2) * 0.05
+            speed = 0.25 + breathe
+            heading = int(math.sin(progress * math.pi) * 6)
+            hue = 0.30 + 0.08 * math.sin(elapsed * 3)
+            rgb = hsv_to_rgb(hue, 0.5, 0.4 + 0.3 * math.sin(progress * math.pi))
+            return MotionCommand("boundary_relief", speed, speed, heading,
+                                 (max(0, min(255, int(round(rgb[0] * 255)))),
+                                  max(0, min(255, int(round(rgb[1] * 255)))),
+                                  max(0, min(255, int(round(rgb[2] * 255))))))
+
+        elif move_type == "straight_cruise_joy":
+            dur = self.config.straight_cruise_joy_duration
+            if elapsed >= dur:
+                self.emotional_move_active = False
+                return None
+            progress = elapsed / dur
+            surge = math.sin(progress * math.pi * 2) * 0.1
+            speed = 0.5 + surge
+            heading = int(math.sin(progress * math.pi) * 3)
+            hue = 0.12 + 0.04 * math.sin(elapsed * 5)
+            rgb = hsv_to_rgb(hue, 0.75, 0.6 + 0.3 * math.sin(progress * math.pi))
+            return MotionCommand("straight_cruise_joy", speed, speed, heading,
+                                 (max(0, min(255, int(round(rgb[0] * 255)))),
+                                  max(0, min(255, int(round(rgb[1] * 255)))),
+                                  max(0, min(255, int(round(rgb[2] * 255))))))
+
+        elif move_type == "smart_recovery_triumph":
+            dur = self.config.smart_recovery_triumph_duration
+            if elapsed >= dur:
+                self.emotional_move_active = False
+                return None
+            progress = elapsed / dur
+            spin = math.sin(progress * math.pi * 4) * 0.12
+            speed = 0.3 + 0.1 * math.sin(progress * math.pi)
+            heading = int(spin * 20)
+            hue = 0.08 + 0.12 * math.sin(elapsed * 6)
+            rgb = hsv_to_rgb(hue, 0.8, 0.5 + 0.4 * math.sin(progress * math.pi))
+            return MotionCommand("smart_recovery_triumph",
+                                 max(-1.0, min(1.0, speed * (1.0 + spin * 0.3))),
+                                 max(-1.0, min(1.0, speed * (1.0 - spin * 0.3))),
+                                 heading,
+                                 (max(0, min(255, int(round(rgb[0] * 255)))),
+                                  max(0, min(255, int(round(rgb[1] * 255)))),
+                                  max(0, min(255, int(round(rgb[2] * 255))))))
 
         return None
 
     def plan(self, front_distance: float, now: float) -> MotionCommand:
+        try:
+            return self._plan_impl(front_distance, now)
+        except Exception:
+            # Never crash — return a safe fallback command
+            self.current_speed = 0.0
+            return MotionCommand(
+                mode="drive",
+                left_speed=0.0,
+                right_speed=0.0,
+                heading=0,
+                colour=(64, 64, 64),
+            )
+
+    def _plan_impl(self, front_distance: float, now: float) -> MotionCommand:
         front_distance = self.observe_front(front_distance)
         approach_rate = self.track_approach_rate(front_distance, now)
         self.decay_exploration_memory()
@@ -6592,6 +7090,13 @@ class AutonomousCarController:
 
         # Gen27: gap fill map update
         self.update_gap_fill_map(heading, now)
+
+        # Gen28: adaptive corridor memory
+        self.update_corridor_memory(heading, front_distance, now)
+        self.decay_corridor_memory(now)
+
+        # Gen28: room boundary detection
+        self.detect_room_boundary(front_distance, self.last_scan, now)
 
         # Gen27: corner trap detection
         is_corner_trap, corner_escape_heading = self.detect_corner_trap(front_distance, self.last_scan)
@@ -6936,6 +7441,17 @@ class AutonomousCarController:
         streak_boost = self.get_straight_streak_speed_boost()
         base_speed = min(self.config.open_space_speed, base_speed + streak_boost)
 
+        # Gen28: straight cruise speed boost
+        if self.straight_cruise_active:
+            corridor_boost = self.config.straight_cruise_speed_boost
+            base_speed = min(self.config.open_space_speed, base_speed + corridor_boost)
+            corridor_momentum_boost = self.get_straight_cruise_momentum_speed_boost()
+            base_speed = min(self.config.open_space_speed, base_speed + corridor_momentum_boost)
+
+        # Gen28: room boundary slowdown
+        if self.room_boundary_detected:
+            base_speed *= (1.0 - self.config.room_boundary_approach_slowdown * 0.5)
+
         delta = base_speed - self.current_speed
         if delta > 0:
             speed = self.current_speed + min(delta, self.config.speed_accel_rate)
@@ -6981,6 +7497,10 @@ class AutonomousCarController:
         # Gen25: update cruise corridor
         self.update_cruise_corridor(heading, front_distance, now, speed)
         self.update_cruise_corridor_momentum(heading, now, front_distance)
+
+        # Gen28: update straight cruise
+        self.update_straight_cruise(heading, front_distance, now, speed)
+        self.update_straight_cruise_momentum(heading, now, front_distance)
 
         # Gen25: check emotional triggers (enhanced)
         self.check_emotional_triggers_gen25(front_distance, now, "drive")
@@ -7070,11 +7590,19 @@ class AutonomousCarController:
         # Gen22: straight-line momentum correction
         steer = self.apply_straight_line_momentum_correction(steer, heading)
 
-        # Gen27: straight streak heading lock correction
+        # Gen27: straight streak heading lock correction (stronger)
         streak_lock = self.get_straight_streak_heading_lock()
         if streak_lock > 0.0 and abs(heading) < 15:
-            streak_correction = -steer * streak_lock * 0.03
+            streak_correction = -steer * streak_lock * 0.06
             steer = max(-1.0, min(1.0, steer + streak_correction))
+            # Also directly dampen steering when streak is high
+            steer *= (1.0 - streak_lock * 0.35)
+
+        # Gen28: straight cruise heading lock correction
+        steer = self.apply_straight_cruise_correction(steer, heading, front_distance)
+
+        # Gen28: room boundary avoidance steering
+        steer = self.room_boundary_avoidance_steer(steer, front_distance)
 
         if abs(heading) < 30 and front_distance > self.config.caution_distance:
             left_side = self.last_scan.get(-45, 0.0)
@@ -7160,6 +7688,42 @@ class AutonomousCarController:
         if emotional_cmd_gen27 is not None:
             self.record_emotional_move(emotional_cmd_gen27.mode)
             return emotional_cmd_gen27
+
+        # Gen28: check for new emotional moves
+        emotional_cmd_gen28 = self.get_emotional_move_command_gen28(now)
+        if emotional_cmd_gen28 is not None:
+            self.record_emotional_move(emotional_cmd_gen28.mode)
+            return emotional_cmd_gen28
+
+        # Gen28: corridor cruise joy trigger
+        if (not self.emotional_move_active
+                and self.straight_cruise_active
+                and self.straight_cruise_momentum > 0.5
+                and self.total_loops % 60 == 0
+                and self._can_trigger_diverse_move("corridor_cruise")):
+            self.trigger_emotional_move("corridor_cruise", now)
+            self.set_mood("confident", now, "corridor_cruise")
+
+        # Gen28: boundary relief trigger
+        if (not self.emotional_move_active
+                and self.room_boundary_detected
+                and self.total_loops % 90 == 0
+                and self._can_trigger_diverse_move("boundary_relief")):
+            self.trigger_emotional_move("boundary_relief", now)
+            self.set_mood("exploring", now, "boundary_relief")
+
+        # Gen28: straight cruise joy trigger
+        if (not self.emotional_move_active
+                and self.straight_cruise_active
+                and self.straight_cruise_momentum > 0.7
+                and self.total_loops % 100 == 0
+                and self._can_trigger_diverse_move("straight_cruise_joy")):
+            self.trigger_emotional_move("straight_cruise_joy", now)
+            self.set_mood("celebration", now, "straight_cruise_joy")
+
+        # Gen28: record corridor quality on successful navigation
+        if front_distance > self.config.cruise_distance and abs(heading) < 15:
+            self.record_recovery_outcome("straight_cruise", 0.8)
 
         left_speed = max(-1.0, min(1.0, speed * (1.0 + steer * self.config.steer_gain)))
         right_speed = max(-1.0, min(1.0, speed * (1.0 - steer * self.config.steer_gain)))
@@ -7419,6 +7983,34 @@ def _describe_lights(command: MotionCommand, controller: "AutonomousCarControlle
     if command.mode == "triumphant_burst":
         return "feel=TRIUMPH | ALL:rainbow-burst(triumphant!)"
 
+    # Gen27: new emotional move descriptions
+    if command.mode == "straight_streak_celebration":
+        return "feel=STREAK!  | ALL:gold-wave(straight line champion!)"
+
+    if command.mode == "open_space_joy":
+        return "feel=BLISS   | ALL:teal-breathe(open space joy~)"
+
+    if command.mode == "gap_fill_satisfaction":
+        return "feel=COMPLETE| ALL:green-spiral(all areas covered!)"
+
+    if command.mode == "corner_escape_relief":
+        return "feel=RELIEF  | ALL:cyan-sigh(corner escaped~)"
+
+    if command.mode == "corridor_cruise":
+        return "feel=FLOW    | ALL:blue-wave(corridor cruising~)"
+
+    if command.mode == "boundary_relief":
+        return "feel=SAFE    | ALL:teal-breathe(boundary clear~)"
+
+    if command.mode == "straight_cruise_joy":
+        return "feel=JOY     | ALL:gold-surge(straight line bliss!)"
+
+    if command.mode == "smart_recovery_triumph":
+        return "feel=TRIUMPH | ALL:rainbow-spin(smart escape!)"
+
+    if command.mode == "corner_escape":
+        return "feel=CORNER  | F:amber(turn) M:amber(escape) R:amber(thrust)"
+
     # Front LEDs: distance emotion
     if front_distance <= 0.0 or front_distance <= cfg.danger_distance:
         front_label = "RED(danger!)"
@@ -7485,1206 +8077,1413 @@ def apply_underlighting(tbot, controller: AutonomousCarController, command: Moti
     except ModuleNotFoundError:
         return
 
+    def _safe_color(rgb):
+        """Ensure RGB values are safely clamped to 0-255."""
+        if not isinstance(rgb, (tuple, list)) or len(rgb) != 3:
+            return (64, 64, 64)
+        r, g, b = rgb
+        try:
+            r = max(0, min(255, int(round(r))))
+            g = max(0, min(255, int(round(g))))
+            b = max(0, min(255, int(round(b))))
+            return (r, g, b)
+        except (TypeError, ValueError):
+            return (64, 64, 64)
+
+    def _safe_set_underlight(led, rgb, show=True):
+        """Safely set underlight LED with proper clamping."""
+        try:
+            r, g, b = _safe_color(rgb)
+            tbot.set_underlight(led, r, g, b, show=show)
+        except Exception:
+            pass
+
+    def _safe_fill_underlighting(rgb):
+        """Safely fill all underlights with proper clamping."""
+        try:
+            r, g, b = _safe_color(rgb)
+            tbot.fill_underlighting(r, g, b)
+        except Exception:
+            pass
+
     cfg = controller.config
 
     def _hsv(h, s, v):
-        r, g, b = hsv_to_rgb(h % 1.0, max(0.0, min(1.0, s)), max(0.0, min(1.0, v)))
-        return int(r * 255), int(g * 255), int(b * 255)
+        h = max(0.0, min(1.0, h % 1.0))
+        s = max(0.0, min(1.0, s))
+        v = max(0.0, min(1.0, v))
+        r, g, b = hsv_to_rgb(h, s, v)
+        return (
+            max(0, min(255, int(round(r * 255)))),
+            max(0, min(255, int(round(g * 255)))),
+            max(0, min(255, int(round(b * 255)))),
+        )
 
-    if command.mode in ("follow", "follow_search"):
-        # Cool blue pulse — lock-on tracking feel
-        is_searching = command.mode == "follow_search"
-        rate = 1.5 if is_searching else (4.0 if command.left_speed > 0.01 else 2.0)
-        pulse = 0.5 + 0.5 * math.sin(now * rate)
-        base_v = 0.08 if is_searching else 0.25
-        col = _hsv(0.60, 1.0, base_v + 0.55 * pulse)
-        tbot.fill_underlighting(*col)
-        return
+    try:
+        if command.mode in ("follow", "follow_search"):
+            # Cool blue pulse — lock-on tracking feel
+            is_searching = command.mode == "follow_search"
+            rate = 1.5 if is_searching else (4.0 if command.left_speed > 0.01 else 2.0)
+            pulse = 0.5 + 0.5 * math.sin(now * rate)
+            base_v = 0.08 if is_searching else 0.25
+            col = _hsv(0.60, 1.0, base_v + 0.55 * pulse)
+            tbot.fill_underlighting(*col)
+            return
 
-    if command.mode == "peek_pounce":
-        pulse = 0.5 + 0.5 * math.sin(now * 10.0)
-        front = (255, 140, 0)
-        middle = (255, int(40 + 90 * pulse), 0)
-        rear = (255, 255, int(120 + 90 * pulse))
-        tbot.set_underlight(LIGHT_FRONT_LEFT, *front, show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, *front, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, *middle, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *middle, show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "peek_pounce":
+            pulse = 0.5 + 0.5 * math.sin(now * 10.0)
+            front = (255, 140, 0)
+            middle = (255, int(40 + 90 * pulse), 0)
+            rear = (255, 255, int(120 + 90 * pulse))
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *front, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *front, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *middle, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *middle, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
+            tbot.show_underlighting()
+            return
 
-    if command.mode == "brave_push":
-        # Bold charge: warm white front (headlights on full), gold middle, orange rear thrust
-        tbot.set_underlight(LIGHT_FRONT_LEFT,  255, 255, 180, show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, 255, 255, 180, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, 255, 180,   0, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT,255, 180,   0, show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT,   255, 100,   0, show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT,  255, 100,   0, show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "brave_push":
+            # Bold charge: warm white front (headlights on full), gold middle, orange rear thrust
+            tbot.set_underlight(LIGHT_FRONT_LEFT,  255, 255, 180, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, 255, 255, 180, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, 255, 180,   0, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT,255, 180,   0, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT,   255, 100,   0, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT,  255, 100,   0, show=False)
+            tbot.show_underlighting()
+            return
 
-    if command.mode == "escape":
-        # Alarm: blazing red front, hot amber rear, dim middle
-        tbot.set_underlight(LIGHT_FRONT_LEFT,  255,  0,  0, show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, 255,  0,  0, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT,  60,  0,  0, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT,  60,  0,  0, show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT,   255, 90,  0, show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT,  255, 90,  0, show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "escape":
+            # Alarm: blazing red front, hot amber rear, dim middle
+            tbot.set_underlight(LIGHT_FRONT_LEFT,  255,  0,  0, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, 255,  0,  0, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT,  60,  0,  0, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT,  60,  0,  0, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT,   255, 90,  0, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT,  255, 90,  0, show=False)
+            tbot.show_underlighting()
+            return
 
-    if command.mode == "dead_end_recovery":
-        # Panic spin: pulsing magenta
-        pulse = 0.5 + 0.5 * math.sin(now * 14.0)
-        col = _hsv(0.83, 1.0, 0.3 + 0.7 * pulse)
-        tbot.fill_underlighting(*col)
-        return
+        if command.mode == "dead_end_recovery":
+            # Panic spin: pulsing magenta
+            pulse = 0.5 + 0.5 * math.sin(now * 14.0)
+            col = _hsv(0.83, 1.0, 0.3 + 0.7 * pulse)
+            tbot.fill_underlighting(*col)
+            return
 
-    if command.mode == "victory_dance":
-        pulse = 0.5 + 0.5 * math.sin(now * 8.0)
-        gold = (255, int(180 + 75 * pulse), int(40 * pulse))
-        tbot.fill_underlighting(*gold)
-        return
+        if command.mode == "victory_dance":
+            pulse = 0.5 + 0.5 * math.sin(now * 8.0)
+            gold = (255, int(180 + 75 * pulse), int(40 * pulse))
+            tbot.fill_underlighting(*gold)
+            return
 
-    if command.mode == "happy_wiggle":
-        pulse = 0.5 + 0.5 * math.sin(now * 6.0)
-        green = (int(40 * pulse), 255, int(80 + 100 * pulse))
-        tbot.fill_underlighting(*green)
-        return
+        if command.mode == "happy_wiggle":
+            pulse = 0.5 + 0.5 * math.sin(now * 6.0)
+            green = (int(40 * pulse), 255, int(80 + 100 * pulse))
+            tbot.fill_underlighting(*green)
+            return
 
-    if command.mode == "frustrated_shimmy":
-        pulse = 0.5 + 0.5 * math.sin(now * 12.0)
-        angry = (int(200 + 55 * pulse), int(30 * (1.0 - pulse)), 0)
-        tbot.fill_underlighting(*angry)
-        return
+        if command.mode == "frustrated_shimmy":
+            pulse = 0.5 + 0.5 * math.sin(now * 12.0)
+            angry = (int(200 + 55 * pulse), int(30 * (1.0 - pulse)), 0)
+            tbot.fill_underlighting(*angry)
+            return
 
-    if command.mode == "confident_strut":
-        pulse = 0.5 + 0.5 * math.sin(now * 3.0)
-        purple = (int(180 + 75 * pulse), 0, int(200 + 55 * pulse))
-        tbot.fill_underlighting(*purple)
-        return
+        if command.mode == "confident_strut":
+            pulse = 0.5 + 0.5 * math.sin(now * 3.0)
+            purple = (int(180 + 75 * pulse), 0, int(200 + 55 * pulse))
+            tbot.fill_underlighting(*purple)
+            return
 
-    if command.mode == "curious_tilt":
-        pulse = 0.5 + 0.5 * math.sin(now * 5.0)
-        cyan = (int(40 * pulse), int(200 + 55 * pulse), int(220 + 35 * pulse))
-        tbot.fill_underlighting(*cyan)
-        return
-
-    if command.mode == "excited_bounce":
-        pulse = 0.5 + 0.5 * math.sin(now * 10.0)
-        yellow = (int(240 + 15 * pulse), int(220 + 35 * pulse), int(40 * (1.0 - pulse)))
-        tbot.fill_underlighting(*yellow)
-        return
-
-    if command.mode == "contemplative_circle":
-        pulse = 0.5 + 0.5 * math.sin(now * 2.0)
-        indigo = (int(80 + 60 * pulse), int(20 * (1.0 - pulse)), int(200 + 55 * pulse))
-        tbot.fill_underlighting(*indigo)
-        return
-
-    if command.mode == "celebration_spin":
-        hue = (now * 4.0) % 1.0
-        rgb = hsv_to_rgb(hue, 0.95, 0.8)
-        tbot.fill_underlighting(int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255))
-        return
-
-    if command.mode == "surprise_shake":
-        pulse = 0.5 + 0.5 * math.sin(now * 25.0)
-        flash = (int(255 * pulse), int(255 * (1.0 - pulse)), 0)
-        tbot.fill_underlighting(*flash)
-        return
-
-    if command.mode == "spiral_exploration":
-        hue = (now * 0.4) % 1.0
-        rgb = hsv_to_rgb(hue, 0.85, 0.6 + 0.3 * math.sin(now * 3.0))
-        tbot.fill_underlighting(int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255))
-        return
-
-    if command.mode == "nervous_creep":
-        pulse = 0.5 + 0.5 * math.sin(now * 8.0)
-        flicker = 0.5 + 0.5 * math.sin(now * 25.0)
-        front = (int(200 + 55 * flicker), int(30 * (1.0 - pulse)), 0)
-        mid = (int(150 + 50 * pulse), int(20 * (1.0 - pulse)), 0)
-        rear = (int(100 + 80 * flicker), int(40 * (1.0 - pulse)), 0)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, *front, show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, *front, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid, show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
-        tbot.show_underlighting()
-        return
-
-    if command.mode == "triumphant_arc":
-        progress = min(1.0, (now - controller.emotional_move_start) / max(controller.config.triumphant_arc_duration, 0.01))
-        hue = 0.1 + 0.08 * math.sin(progress * math.pi * 3)
-        rgb = hsv_to_rgb(hue, 0.9, 0.6 + 0.4 * math.sin(now * 6))
-        arc_rgb = hsv_to_rgb((hue + 0.15) % 1.0, 0.85, 0.5 + 0.5 * progress)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(arc_rgb[0] * 255), int(arc_rgb[1] * 255), int(arc_rgb[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(arc_rgb[0] * 255), int(arc_rgb[1] * 255), int(arc_rgb[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rgb[0] * 200), int(rgb[1] * 200), int(rgb[2] * 200), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(arc_rgb[0] * 200), int(arc_rgb[1] * 200), int(arc_rgb[2] * 200), show=False)
-        tbot.show_underlighting()
-        return
-
-    if command.mode == "confused_figure8":
-        hue = 0.7 + 0.15 * math.sin(now * 4)
-        pulse = 0.5 + 0.5 * math.sin(now * 3)
-        rgb = hsv_to_rgb(hue, 0.5, 0.4 + 0.3 * pulse)
-        alt_rgb = hsv_to_rgb((hue + 0.2) % 1.0, 0.4, 0.3 + 0.4 * pulse)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(alt_rgb[0] * 255), int(alt_rgb[1] * 255), int(alt_rgb[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(alt_rgb[0] * 255), int(alt_rgb[1] * 255), int(alt_rgb[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rgb[0] * 200), int(rgb[1] * 200), int(rgb[2] * 200), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(alt_rgb[0] * 200), int(alt_rgb[1] * 200), int(alt_rgb[2] * 200), show=False)
-        tbot.show_underlighting()
-        return
-
-    if command.mode == "relaxed_cruise":
-        hue = 0.35 + 0.1 * math.sin(now * 1.5)
-        pulse = 0.5 + 0.5 * math.sin(now * 2)
-        rgb = hsv_to_rgb(hue, 0.6, 0.5 + 0.3 * pulse)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(rgb[0] * 220), int(rgb[1] * 220), int(rgb[2] * 220), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(rgb[0] * 220), int(rgb[1] * 220), int(rgb[2] * 220), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rgb[0] * 180), int(rgb[1] * 180), int(rgb[2] * 180), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rgb[0] * 180), int(rgb[1] * 180), int(rgb[2] * 180), show=False)
-        tbot.show_underlighting()
-        return
-
-    if command.mode == "alert_scan":
-        pulse = 0.5 + 0.5 * math.sin(now * 12.0)
-        sweep = 0.5 + 0.5 * math.sin(now * 4.0)
-        front = (int(200 + 55 * pulse), int(160 + 60 * sweep), 0)
-        mid = (int(180 + 40 * pulse), int(140 + 40 * sweep), int(30 * pulse))
-        rear = (int(150 + 50 * pulse), int(120 + 50 * sweep), int(20 * pulse))
-        tbot.set_underlight(LIGHT_FRONT_LEFT, *front, show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, *front, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid, show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
-        tbot.show_underlighting()
-        return
-
-    if command.mode == "satisfied_purr":
-        purr = 0.5 + 0.5 * math.sin(now * 6.0)
-        warm = (int(220 + 35 * purr), int(140 + 60 * purr), int(40 * (1.0 - purr)))
-        tbot.set_underlight(LIGHT_FRONT_LEFT, *warm, show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, *warm, show=False)
-        mid_warm = (int(200 + 30 * purr), int(120 + 50 * purr), int(30 * (1.0 - purr)))
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid_warm, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid_warm, show=False)
-        rear_warm = (int(180 + 40 * purr), int(100 + 40 * purr), int(20 * (1.0 - purr)))
-        tbot.set_underlight(LIGHT_REAR_LEFT, *rear_warm, show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, *rear_warm, show=False)
-        tbot.show_underlighting()
-        return
-
-    if command.mode == "determined_lunge":
-        progress = min(1.0, (now - controller.emotional_move_start) / max(controller.config.determined_lunge_duration, 0.01))
-        intensity = 0.3 + 0.7 * progress
-        rgb = hsv_to_rgb(0.08, 0.9, intensity)
-        tbot.fill_underlighting(int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255))
-        return
-
-    if command.mode == "grateful_bow":
-        bow = math.sin((now - controller.emotional_move_start) / max(controller.config.grateful_bow_duration, 0.01) * math.pi)
-        gold = (int(200 + 55 * bow), int(160 + 70 * bow), int(40 * bow))
-        tbot.fill_underlighting(*gold)
-        return
-
-    if command.mode == "victory_lap":
-        hue = (now * 0.6) % 1.0
-        rgb = hsv_to_rgb(hue, 0.95, 0.7 + 0.3 * math.sin(now * 6))
-        tbot.fill_underlighting(int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255))
-        return
-
-    if command.mode == "curious_sniff":
-        sniff = 0.5 + 0.5 * math.sin(now * 5.0)
-        cyan = (int(40 * sniff), int(180 + 75 * sniff), int(200 + 55 * sniff))
-        tbot.fill_underlighting(*cyan)
-        return
-
-    if command.mode == "gentle_weave":
-        weave = 0.5 + 0.5 * math.sin(now * 3.0)
-        teal = (int(40 * (1.0 - weave)), int(200 + 55 * weave), int(180 + 40 * weave))
-        tbot.fill_underlighting(*teal)
-        return
-
-    if command.mode == "happy_hop":
-        hop = 0.5 + 0.5 * math.sin(now * 10.0)
-        yellow = (int(240 + 15 * hop), int(220 + 35 * hop), int(30 * (1.0 - hop)))
-        tbot.fill_underlighting(*yellow)
-        return
-
-    if command.mode == "boustrophedon":
-        wave = 0.5 + 0.5 * math.sin(now * 2.0)
-        progress = min(1.0, (now - controller.boustrophedon_start_time) / max(controller.config.boustrophedon_duration_s, 0.01))
-        hue = 0.25 + 0.15 * math.sin(progress * math.pi * 3)
-        front = _hsv(hue, 0.85, 0.5 + 0.4 * wave)
-        mid = _hsv((hue + 0.05) % 1.0, 0.8, 0.4 + 0.3 * wave)
-        rear = _hsv((hue + 0.1) % 1.0, 0.75, 0.3 + 0.3 * wave)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, *front, show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, *front, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid, show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
-        tbot.show_underlighting()
-        return
-
-    if command.mode == "zoomies":
-        hue = (now * 5.0) % 1.0
-        burst = 0.5 + 0.5 * math.sin(now * 15.0)
-        fl = _hsv(hue, 0.95, 0.7 + 0.3 * burst)
-        fr = _hsv((hue + 0.15) % 1.0, 0.95, 0.7 + 0.3 * burst)
-        ml = _hsv((hue + 0.3) % 1.0, 0.9, 0.6 + 0.4 * burst)
-        mr = _hsv((hue + 0.45) % 1.0, 0.9, 0.6 + 0.4 * burst)
-        rl = _hsv((hue + 0.6) % 1.0, 0.85, 0.5 + 0.5 * burst)
-        rr = _hsv((hue + 0.75) % 1.0, 0.85, 0.5 + 0.5 * burst)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
-        tbot.show_underlighting()
-        return
-
-    if command.mode == "play_bow":
-        bow = math.sin((now - controller.emotional_move_start) / max(controller.config.play_bow_duration, 0.01) * math.pi)
-        warm = (int(200 + 55 * bow), int(140 + 80 * bow), int(40 * (1.0 - bow)))
-        tbot.fill_underlighting(*warm)
-        return
-
-    if command.mode == "peek_a_boo":
-        peek = 0.5 + 0.5 * math.sin(now * 6.0)
-        if peek > 0.5:
-            cyan = (int(40 * peek), int(200 + 55 * peek), int(220 + 35 * peek))
+        if command.mode == "curious_tilt":
+            pulse = 0.5 + 0.5 * math.sin(now * 5.0)
+            cyan = (int(40 * pulse), int(200 + 55 * pulse), int(220 + 35 * pulse))
             tbot.fill_underlighting(*cyan)
-        else:
-            tbot.fill_underlighting(20, 20, 40)
-        return
+            return
 
-    if command.mode == "stalk_mode":
-        progress = min(1.0, (now - controller.emotional_move_start) / max(controller.config.stalk_mode_duration, 0.01))
-        intensity = 0.2 + 0.6 * progress
-        flicker = 0.5 + 0.5 * math.sin(now * 8.0)
-        front = (int(180 + 75 * flicker), int(30 * intensity), 0)
-        mid = (int(140 + 60 * flicker), int(20 * intensity), 0)
-        rear = (int(100 + 50 * flicker), int(15 * intensity), 0)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, *front, show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, *front, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid, show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "excited_bounce":
+            pulse = 0.5 + 0.5 * math.sin(now * 10.0)
+            yellow = (int(240 + 15 * pulse), int(220 + 35 * pulse), int(40 * (1.0 - pulse)))
+            tbot.fill_underlighting(*yellow)
+            return
 
-    if command.mode == "greeting":
-        wag = 0.5 + 0.5 * math.sin(now * 8.0)
-        hue = 0.12 + 0.08 * math.sin(now * 3.0)
-        rgb = hsv_to_rgb(hue, 0.85, 0.5 + 0.4 * wag)
-        tbot.fill_underlighting(int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255))
-        return
+        if command.mode == "contemplative_circle":
+            pulse = 0.5 + 0.5 * math.sin(now * 2.0)
+            indigo = (int(80 + 60 * pulse), int(20 * (1.0 - pulse)), int(200 + 55 * pulse))
+            tbot.fill_underlighting(*indigo)
+            return
 
-    if command.mode == "sleep_mode":
-        breathe = 0.5 + 0.5 * math.sin(now * 1.5)
-        blue = (int(20 * breathe), int(30 * breathe), int(80 + 60 * breathe))
-        tbot.fill_underlighting(*blue)
-        return
+        if command.mode == "celebration_spin":
+            hue = (now * 4.0) % 1.0
+            rgb = hsv_to_rgb(hue, 0.95, 0.8)
+            tbot.fill_underlighting_clamp_rgb_tuple(rgb)
+            return
 
-    if command.mode == "backing_dance":
-        dance = 0.5 + 0.5 * math.sin(now * 10.0)
-        hue = 0.8 + 0.1 * math.sin(now * 5.0)
-        fl = _hsv(hue, 0.7, 0.4 + 0.4 * dance)
-        fr = _hsv((hue + 0.2) % 1.0, 0.7, 0.4 + 0.4 * dance)
-        ml = _hsv((hue + 0.1) % 1.0, 0.65, 0.3 + 0.3 * dance)
-        mr = _hsv((hue + 0.3) % 1.0, 0.65, 0.3 + 0.3 * dance)
-        rl = _hsv((hue + 0.15) % 1.0, 0.6, 0.2 + 0.2 * dance)
-        rr = _hsv((hue + 0.35) % 1.0, 0.6, 0.2 + 0.2 * dance)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "surprise_shake":
+            pulse = 0.5 + 0.5 * math.sin(now * 25.0)
+            flash = (int(255 * pulse), int(255 * (1.0 - pulse)), 0)
+            tbot.fill_underlighting(*flash)
+            return
 
-    if command.mode == "serpentine":
-        hue = (now * 0.8) % 1.0
-        wave = 0.5 + 0.5 * math.sin(now * 3.0)
-        fl = _hsv(hue, 0.85, 0.6 + 0.3 * wave)
-        fr = _hsv((hue + 0.12) % 1.0, 0.85, 0.6 + 0.3 * wave)
-        ml = _hsv((hue + 0.24) % 1.0, 0.8, 0.5 + 0.3 * wave)
-        mr = _hsv((hue + 0.36) % 1.0, 0.8, 0.5 + 0.3 * wave)
-        rl = _hsv((hue + 0.48) % 1.0, 0.75, 0.4 + 0.3 * wave)
-        rr = _hsv((hue + 0.6) % 1.0, 0.75, 0.4 + 0.3 * wave)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "spiral_exploration":
+            hue = (now * 0.4) % 1.0
+            rgb = hsv_to_rgb(hue, 0.85, 0.6 + 0.3 * math.sin(now * 3.0))
+            tbot.fill_underlighting_clamp_rgb_tuple(rgb)
+            return
 
-    # Gen23: new emotional move underlighting
-    if command.mode == "explorer_pride":
-        progress = min(1.0, (now - controller.emotional_move_start) / max(controller.config.explorer_pride_duration, 0.01))
-        hue = 0.12 + 0.08 * math.sin(progress * math.pi)
-        rgb = hsv_to_rgb(hue, 0.9, 0.6 + 0.4 * math.sin(now * 4))
-        fl = _hsv(hue, 0.9, 0.7 + 0.3 * progress)
-        fr = _hsv((hue + 0.05) % 1.0, 0.9, 0.7 + 0.3 * progress)
-        ml = _hsv((hue + 0.1) % 1.0, 0.85, 0.5 + 0.3 * progress)
-        mr = _hsv((hue + 0.15) % 1.0, 0.85, 0.5 + 0.3 * progress)
-        rl = _hsv((hue + 0.2) % 1.0, 0.8, 0.4 + 0.2 * progress)
-        rr = _hsv((hue + 0.25) % 1.0, 0.8, 0.4 + 0.2 * progress)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "nervous_creep":
+            pulse = 0.5 + 0.5 * math.sin(now * 8.0)
+            flicker = 0.5 + 0.5 * math.sin(now * 25.0)
+            front = (int(200 + 55 * flicker), int(30 * (1.0 - pulse)), 0)
+            mid = (int(150 + 50 * pulse), int(20 * (1.0 - pulse)), 0)
+            rear = (int(100 + 80 * flicker), int(40 * (1.0 - pulse)), 0)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *front, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *front, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
+            tbot.show_underlighting()
+            return
 
-    if command.mode == "mapping_joy":
-        hue = (now * 0.5) % 1.0
-        wave = 0.5 + 0.5 * math.sin(now * 4.0)
-        fl = _hsv(hue, 0.85, 0.6 + 0.3 * wave)
-        fr = _hsv((hue + 0.17) % 1.0, 0.85, 0.6 + 0.3 * wave)
-        ml = _hsv((hue + 0.33) % 1.0, 0.8, 0.5 + 0.3 * wave)
-        mr = _hsv((hue + 0.5) % 1.0, 0.8, 0.5 + 0.3 * wave)
-        rl = _hsv((hue + 0.67) % 1.0, 0.75, 0.4 + 0.2 * wave)
-        rr = _hsv((hue + 0.83) % 1.0, 0.75, 0.4 + 0.2 * wave)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "triumphant_arc":
+            progress = min(1.0, (now - controller.emotional_move_start) / max(controller.config.triumphant_arc_duration, 0.01))
+            hue = 0.1 + 0.08 * math.sin(progress * math.pi * 3)
+            rgb = hsv_to_rgb(hue, 0.9, 0.6 + 0.4 * math.sin(now * 6))
+            arc_rgb = hsv_to_rgb((hue + 0.15) % 1.0, 0.85, 0.5 + 0.5 * progress)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *_clamp_rgb_tuple(rgb), show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *_clamp_rgb_tuple(arc_rgb), show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *_clamp_rgb_tuple(rgb), show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *_clamp_rgb_tuple(arc_rgb), show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *_clamp_rgb_tuple(rgb), show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *_clamp_rgb_tuple(arc_rgb), show=False)
+            tbot.show_underlighting()
+            return
 
-    if command.mode == "corridor_dance":
-        hue = 0.3 + 0.15 * math.sin(now * 5.0)
-        wave = 0.5 + 0.5 * math.sin(now * 6.0)
-        fl = _hsv(hue, 0.85, 0.6 + 0.3 * wave)
-        fr = _hsv((hue + 0.1) % 1.0, 0.85, 0.6 + 0.3 * wave)
-        ml = _hsv((hue + 0.2) % 1.0, 0.8, 0.5 + 0.3 * wave)
-        mr = _hsv((hue + 0.3) % 1.0, 0.8, 0.5 + 0.3 * wave)
-        rl = _hsv((hue + 0.4) % 1.0, 0.75, 0.4 + 0.2 * wave)
-        rr = _hsv((hue + 0.5) % 1.0, 0.75, 0.4 + 0.2 * wave)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "confused_figure8":
+            hue = 0.7 + 0.15 * math.sin(now * 4)
+            pulse = 0.5 + 0.5 * math.sin(now * 3)
+            rgb = hsv_to_rgb(hue, 0.5, 0.4 + 0.3 * pulse)
+            alt_rgb = hsv_to_rgb((hue + 0.2) % 1.0, 0.4, 0.3 + 0.4 * pulse)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *_clamp_rgb_tuple(rgb), show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *_clamp_rgb_tuple(alt_rgb), show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *_clamp_rgb_tuple(alt_rgb), show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *_clamp_rgb_tuple(rgb), show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *_clamp_rgb_tuple(rgb), show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *_clamp_rgb_tuple(alt_rgb), show=False)
+            tbot.show_underlighting()
+            return
 
-    if command.mode == "open_space_celebration":
-        hue = (now * 3.0) % 1.0
-        burst = 0.5 + 0.5 * math.sin(now * 12.0)
-        fl = _hsv(hue, 0.95, 0.7 + 0.3 * burst)
-        fr = _hsv((hue + 0.17) % 1.0, 0.95, 0.7 + 0.3 * burst)
-        ml = _hsv((hue + 0.33) % 1.0, 0.9, 0.6 + 0.4 * burst)
-        mr = _hsv((hue + 0.5) % 1.0, 0.9, 0.6 + 0.4 * burst)
-        rl = _hsv((hue + 0.67) % 1.0, 0.85, 0.5 + 0.5 * burst)
-        rr = _hsv((hue + 0.83) % 1.0, 0.85, 0.5 + 0.5 * burst)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "relaxed_cruise":
+            hue = 0.35 + 0.1 * math.sin(now * 1.5)
+            pulse = 0.5 + 0.5 * math.sin(now * 2)
+            rgb = hsv_to_rgb(hue, 0.6, 0.5 + 0.3 * pulse)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *_clamp_rgb_tuple(rgb), show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *_clamp_rgb_tuple(rgb), show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *_clamp_rgb_tuple(rgb), show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *_clamp_rgb_tuple(rgb), show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *_clamp_rgb_tuple(rgb), show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *_clamp_rgb_tuple(rgb), show=False)
+            tbot.show_underlighting()
+            return
 
-    if command.mode == "wall_caress":
-        hue = 0.25 + 0.08 * math.sin(now * 3.0)
-        wave = 0.5 + 0.5 * math.sin(now * 2.5)
-        fl = _hsv(hue, 0.7, 0.5 + 0.3 * wave)
-        fr = _hsv(hue, 0.7, 0.5 + 0.3 * wave)
-        ml = _hsv((hue + 0.05) % 1.0, 0.65, 0.4 + 0.2 * wave)
-        mr = _hsv((hue + 0.05) % 1.0, 0.65, 0.4 + 0.2 * wave)
-        rl = _hsv((hue + 0.1) % 1.0, 0.6, 0.3 + 0.2 * wave)
-        rr = _hsv((hue + 0.1) % 1.0, 0.6, 0.3 + 0.2 * wave)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "alert_scan":
+            pulse = 0.5 + 0.5 * math.sin(now * 12.0)
+            sweep = 0.5 + 0.5 * math.sin(now * 4.0)
+            front = (int(200 + 55 * pulse), int(160 + 60 * sweep), 0)
+            mid = (int(180 + 40 * pulse), int(140 + 40 * sweep), int(30 * pulse))
+            rear = (int(150 + 50 * pulse), int(120 + 50 * sweep), int(20 * pulse))
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *front, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *front, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
+            tbot.show_underlighting()
+            return
 
-    if command.mode == "discovery_spin":
-        hue = (now * 4.0) % 1.0
-        spin = 0.5 + 0.5 * math.sin(now * 10.0)
-        fl = _hsv(hue, 0.9, 0.7 + 0.3 * spin)
-        fr = _hsv((hue + 0.25) % 1.0, 0.9, 0.7 + 0.3 * spin)
-        ml = _hsv((hue + 0.5) % 1.0, 0.85, 0.6 + 0.3 * spin)
-        mr = _hsv((hue + 0.75) % 1.0, 0.85, 0.6 + 0.3 * spin)
-        rl = _hsv(hue, 0.8, 0.5 + 0.3 * spin)
-        rr = _hsv((hue + 0.5) % 1.0, 0.8, 0.5 + 0.3 * spin)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "satisfied_purr":
+            purr = 0.5 + 0.5 * math.sin(now * 6.0)
+            warm = (int(220 + 35 * purr), int(140 + 60 * purr), int(40 * (1.0 - purr)))
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *warm, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *warm, show=False)
+            mid_warm = (int(200 + 30 * purr), int(120 + 50 * purr), int(30 * (1.0 - purr)))
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid_warm, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid_warm, show=False)
+            rear_warm = (int(180 + 40 * purr), int(100 + 40 * purr), int(20 * (1.0 - purr)))
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rear_warm, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rear_warm, show=False)
+            tbot.show_underlighting()
+            return
 
-    # Gen24: new emotional move underlighting
-    if command.mode == "curious_probe":
-        probe = 0.5 + 0.5 * math.sin(now * 5.0)
-        cyan = (int(40 * probe), int(180 + 75 * probe), int(200 + 55 * probe))
-        tbot.set_underlight(LIGHT_FRONT_LEFT, *cyan, show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, *cyan, show=False)
-        mid = (int(30 * probe), int(160 + 60 * probe), int(180 + 40 * probe))
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid, show=False)
-        rear = (int(20 * probe), int(140 + 50 * probe), int(160 + 30 * probe))
-        tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "determined_lunge":
+            progress = min(1.0, (now - controller.emotional_move_start) / max(controller.config.determined_lunge_duration, 0.01))
+            intensity = 0.3 + 0.7 * progress
+            rgb = hsv_to_rgb(0.08, 0.9, intensity)
+            tbot.fill_underlighting_clamp_rgb_tuple(rgb)
+            return
 
-    if command.mode == "excited_wiggle":
-        hue = (now * 3.0) % 1.0
-        wiggle = 0.5 + 0.5 * math.sin(now * 12.0)
-        fl = _hsv(hue, 0.9, 0.7 + 0.3 * wiggle)
-        fr = _hsv((hue + 0.2) % 1.0, 0.9, 0.7 + 0.3 * wiggle)
-        ml = _hsv((hue + 0.4) % 1.0, 0.85, 0.6 + 0.4 * wiggle)
-        mr = _hsv((hue + 0.6) % 1.0, 0.85, 0.6 + 0.4 * wiggle)
-        rl = _hsv((hue + 0.8) % 1.0, 0.8, 0.5 + 0.3 * wiggle)
-        rr = _hsv(hue, 0.8, 0.5 + 0.3 * wiggle)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "grateful_bow":
+            bow = math.sin((now - controller.emotional_move_start) / max(controller.config.grateful_bow_duration, 0.01) * math.pi)
+            gold = (int(200 + 55 * bow), int(160 + 70 * bow), int(40 * bow))
+            tbot.fill_underlighting(*gold)
+            return
 
-    if command.mode == "contemplative_pause":
-        breathe = 0.5 + 0.5 * math.sin(now * 1.5)
-        indigo = (int(80 + 60 * breathe), int(20 * (1.0 - breathe)), int(180 + 75 * breathe))
-        tbot.set_underlight(LIGHT_FRONT_LEFT, *indigo, show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, *indigo, show=False)
-        mid = (int(60 + 40 * breathe), int(15 * (1.0 - breathe)), int(140 + 60 * breathe))
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid, show=False)
-        rear = (int(40 + 30 * breathe), int(10 * (1.0 - breathe)), int(100 + 50 * breathe))
-        tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "victory_lap":
+            hue = (now * 0.6) % 1.0
+            rgb = hsv_to_rgb(hue, 0.95, 0.7 + 0.3 * math.sin(now * 6))
+            tbot.fill_underlighting_clamp_rgb_tuple(rgb)
+            return
 
-    if command.mode == "confident_cruise":
-        hue = 0.35 + 0.05 * math.sin(now * 2)
-        pulse = 0.5 + 0.5 * math.sin(now * 3)
-        rgb = _hsv(hue, 0.7, 0.5 + 0.3 * pulse)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, *rgb, show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, *rgb, show=False)
-        mid = _hsv((hue + 0.05) % 1.0, 0.65, 0.4 + 0.2 * pulse)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid, show=False)
-        rear = _hsv((hue + 0.1) % 1.0, 0.6, 0.3 + 0.2 * pulse)
-        tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "curious_sniff":
+            sniff = 0.5 + 0.5 * math.sin(now * 5.0)
+            cyan = (int(40 * sniff), int(180 + 75 * sniff), int(200 + 55 * sniff))
+            tbot.fill_underlighting(*cyan)
+            return
 
-    if command.mode == "explorer_sprint":
-        hue = (now * 2.5) % 1.0
-        sprint = 0.5 + 0.5 * math.sin(now * 10.0)
-        fl = _hsv(hue, 0.95, 0.6 + 0.4 * sprint)
-        fr = _hsv((hue + 0.12) % 1.0, 0.95, 0.6 + 0.4 * sprint)
-        ml = _hsv((hue + 0.24) % 1.0, 0.9, 0.5 + 0.3 * sprint)
-        mr = _hsv((hue + 0.36) % 1.0, 0.9, 0.5 + 0.3 * sprint)
-        rl = _hsv((hue + 0.48) % 1.0, 0.85, 0.4 + 0.3 * sprint)
-        rr = _hsv((hue + 0.6) % 1.0, 0.85, 0.4 + 0.3 * sprint)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "gentle_weave":
+            weave = 0.5 + 0.5 * math.sin(now * 3.0)
+            teal = (int(40 * (1.0 - weave)), int(200 + 55 * weave), int(180 + 40 * weave))
+            tbot.fill_underlighting(*teal)
+            return
 
-    if command.mode == "cautious_approach":
-        progress = min(1.0, (now - controller.emotional_move_start) / max(controller.config.cautious_approach_duration, 0.01))
-        intensity = 0.2 + 0.5 * progress
-        flicker = 0.5 + 0.5 * math.sin(now * 8.0)
-        front = (int(160 + 80 * flicker), int(30 * intensity), 0)
-        mid = (int(120 + 60 * flicker), int(20 * intensity), 0)
-        rear = (int(80 + 40 * flicker), int(15 * intensity), 0)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, *front, show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, *front, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid, show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "happy_hop":
+            hop = 0.5 + 0.5 * math.sin(now * 10.0)
+            yellow = (int(240 + 15 * hop), int(220 + 35 * hop), int(30 * (1.0 - hop)))
+            tbot.fill_underlighting(*yellow)
+            return
 
-    if command.mode == "joyful_bounce":
-        hue = 0.12 + 0.08 * math.sin(now * 8)
-        bounce = 0.5 + 0.5 * math.sin(now * 10.0)
-        fl = _hsv(hue, 0.85, 0.6 + 0.4 * bounce)
-        fr = _hsv((hue + 0.08) % 1.0, 0.85, 0.6 + 0.4 * bounce)
-        ml = _hsv((hue + 0.16) % 1.0, 0.8, 0.5 + 0.3 * bounce)
-        mr = _hsv((hue + 0.24) % 1.0, 0.8, 0.5 + 0.3 * bounce)
-        rl = _hsv((hue + 0.32) % 1.0, 0.75, 0.4 + 0.2 * bounce)
-        rr = _hsv((hue + 0.4) % 1.0, 0.75, 0.4 + 0.2 * bounce)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "boustrophedon":
+            wave = 0.5 + 0.5 * math.sin(now * 2.0)
+            progress = min(1.0, (now - controller.boustrophedon_start_time) / max(controller.config.boustrophedon_duration_s, 0.01))
+            hue = 0.25 + 0.15 * math.sin(progress * math.pi * 3)
+            front = _hsv(hue, 0.85, 0.5 + 0.4 * wave)
+            mid = _hsv((hue + 0.05) % 1.0, 0.8, 0.4 + 0.3 * wave)
+            rear = _hsv((hue + 0.1) % 1.0, 0.75, 0.3 + 0.3 * wave)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *front, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *front, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
+            tbot.show_underlighting()
+            return
 
-    if command.mode == "discovery_celebration":
-        hue = (now * 3.0) % 1.0
-        burst = 0.5 + 0.5 * math.sin(now * 12.0)
-        fl = _hsv(hue, 0.95, 0.7 + 0.3 * burst)
-        fr = _hsv((hue + 0.17) % 1.0, 0.95, 0.7 + 0.3 * burst)
-        ml = _hsv((hue + 0.33) % 1.0, 0.9, 0.6 + 0.4 * burst)
-        mr = _hsv((hue + 0.5) % 1.0, 0.9, 0.6 + 0.4 * burst)
-        rl = _hsv((hue + 0.67) % 1.0, 0.85, 0.5 + 0.5 * burst)
-        rr = _hsv((hue + 0.83) % 1.0, 0.85, 0.5 + 0.5 * burst)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "zoomies":
+            hue = (now * 5.0) % 1.0
+            burst = 0.5 + 0.5 * math.sin(now * 15.0)
+            fl = _hsv(hue, 0.95, 0.7 + 0.3 * burst)
+            fr = _hsv((hue + 0.15) % 1.0, 0.95, 0.7 + 0.3 * burst)
+            ml = _hsv((hue + 0.3) % 1.0, 0.9, 0.6 + 0.4 * burst)
+            mr = _hsv((hue + 0.45) % 1.0, 0.9, 0.6 + 0.4 * burst)
+            rl = _hsv((hue + 0.6) % 1.0, 0.85, 0.5 + 0.5 * burst)
+            rr = _hsv((hue + 0.75) % 1.0, 0.85, 0.5 + 0.5 * burst)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
 
-    if command.mode == "wander":
-        elapsed = now - controller.wander_start_time if controller.wander_active else 0
-        hue = 0.55 + 0.15 * math.sin(elapsed * 3)
-        wave = 0.5 + 0.5 * math.sin(now * 2.5)
-        fl = _hsv(hue, 0.7, 0.5 + 0.3 * wave)
-        fr = _hsv((hue + 0.08) % 1.0, 0.7, 0.5 + 0.3 * wave)
-        ml = _hsv((hue + 0.16) % 1.0, 0.6, 0.4 + 0.2 * wave)
-        mr = _hsv((hue + 0.24) % 1.0, 0.6, 0.4 + 0.2 * wave)
-        rl = _hsv((hue + 0.32) % 1.0, 0.5, 0.3 + 0.2 * wave)
-        rr = _hsv((hue + 0.4) % 1.0, 0.5, 0.3 + 0.2 * wave)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "play_bow":
+            bow = math.sin((now - controller.emotional_move_start) / max(controller.config.play_bow_duration, 0.01) * math.pi)
+            warm = (int(200 + 55 * bow), int(140 + 80 * bow), int(40 * (1.0 - bow)))
+            tbot.fill_underlighting(*warm)
+            return
 
-    if command.mode == "edge_patrol":
-        elapsed = now - controller.edge_patrol_start_time if controller.edge_patrol_active else 0
-        hue = 0.15 + 0.1 * math.sin(elapsed * 2)
-        wave = 0.5 + 0.5 * math.sin(now * 3)
-        fl = _hsv(hue, 0.8, 0.5 + 0.3 * wave)
-        fr = _hsv(hue, 0.8, 0.5 + 0.3 * wave)
-        ml = _hsv((hue + 0.05) % 1.0, 0.7, 0.4 + 0.2 * wave)
-        mr = _hsv((hue + 0.05) % 1.0, 0.7, 0.4 + 0.2 * wave)
-        rl = _hsv((hue + 0.1) % 1.0, 0.6, 0.3 + 0.2 * wave)
-        rr = _hsv((hue + 0.1) % 1.0, 0.6, 0.3 + 0.2 * wave)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "peek_a_boo":
+            peek = 0.5 + 0.5 * math.sin(now * 6.0)
+            if peek > 0.5:
+                cyan = (int(40 * peek), int(200 + 55 * peek), int(220 + 35 * peek))
+                tbot.fill_underlighting(*cyan)
+            else:
+                tbot.fill_underlighting(20, 20, 40)
+            return
 
-    # Gen25: new emotional move underlighting
-    if command.mode == "joyful_spin":
-        hue = (now * 4.0) % 1.0
-        spin = 0.5 + 0.5 * math.sin(now * 10.0)
-        fl = _hsv(hue, 0.95, 0.7 + 0.3 * spin)
-        fr = _hsv((hue + 0.25) % 1.0, 0.95, 0.7 + 0.3 * spin)
-        ml = _hsv((hue + 0.5) % 1.0, 0.85, 0.6 + 0.3 * spin)
-        mr = _hsv((hue + 0.75) % 1.0, 0.85, 0.6 + 0.3 * spin)
-        rl = _hsv(hue, 0.8, 0.5 + 0.3 * spin)
-        rr = _hsv((hue + 0.5) % 1.0, 0.8, 0.5 + 0.3 * spin)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "stalk_mode":
+            progress = min(1.0, (now - controller.emotional_move_start) / max(controller.config.stalk_mode_duration, 0.01))
+            intensity = 0.2 + 0.6 * progress
+            flicker = 0.5 + 0.5 * math.sin(now * 8.0)
+            front = (int(180 + 75 * flicker), int(30 * intensity), 0)
+            mid = (int(140 + 60 * flicker), int(20 * intensity), 0)
+            rear = (int(100 + 50 * flicker), int(15 * intensity), 0)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *front, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *front, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
+            tbot.show_underlighting()
+            return
 
-    if command.mode == "curious_weave":
-        weave = 0.5 + 0.5 * math.sin(now * 4.0)
-        cyan = (int(40 * weave), int(180 + 75 * weave), int(200 + 55 * weave))
-        tbot.set_underlight(LIGHT_FRONT_LEFT, *cyan, show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, *cyan, show=False)
-        mid = (int(30 * weave), int(160 + 60 * weave), int(180 + 40 * weave))
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid, show=False)
-        rear = (int(20 * weave), int(140 + 50 * weave), int(160 + 30 * weave))
-        tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "greeting":
+            wag = 0.5 + 0.5 * math.sin(now * 8.0)
+            hue = 0.12 + 0.08 * math.sin(now * 3.0)
+            rgb = hsv_to_rgb(hue, 0.85, 0.5 + 0.4 * wag)
+            tbot.fill_underlighting_clamp_rgb_tuple(rgb)
+            return
 
-    if command.mode == "excited_dash":
-        progress = min(1.0, (now - controller.emotional_move_start) / max(controller.config.excited_dash_duration, 0.01))
-        hue = 0.1 + 0.15 * math.sin(now * 10)
-        rgb = _hsv(hue, 0.95, 0.5 + 0.5 * progress)
-        tbot.fill_underlighting(*rgb)
-        return
+        if command.mode == "sleep_mode":
+            breathe = 0.5 + 0.5 * math.sin(now * 1.5)
+            blue = (int(20 * breathe), int(30 * breathe), int(80 + 60 * breathe))
+            tbot.fill_underlighting(*blue)
+            return
 
-    if command.mode == "peaceful_glide":
-        breathe = 0.5 + 0.5 * math.sin(now * 1.5)
-        hue = 0.35 + 0.08 * math.sin(now * 1.5)
-        fl = _hsv(hue, 0.5, 0.4 + 0.3 * breathe)
-        fr = _hsv(hue, 0.5, 0.4 + 0.3 * breathe)
-        ml = _hsv((hue + 0.05) % 1.0, 0.4, 0.3 + 0.2 * breathe)
-        mr = _hsv((hue + 0.05) % 1.0, 0.4, 0.3 + 0.2 * breathe)
-        rl = _hsv((hue + 0.1) % 1.0, 0.3, 0.2 + 0.15 * breathe)
-        rr = _hsv((hue + 0.1) % 1.0, 0.3, 0.2 + 0.15 * breathe)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "backing_dance":
+            dance = 0.5 + 0.5 * math.sin(now * 10.0)
+            hue = 0.8 + 0.1 * math.sin(now * 5.0)
+            fl = _hsv(hue, 0.7, 0.4 + 0.4 * dance)
+            fr = _hsv((hue + 0.2) % 1.0, 0.7, 0.4 + 0.4 * dance)
+            ml = _hsv((hue + 0.1) % 1.0, 0.65, 0.3 + 0.3 * dance)
+            mr = _hsv((hue + 0.3) % 1.0, 0.65, 0.3 + 0.3 * dance)
+            rl = _hsv((hue + 0.15) % 1.0, 0.6, 0.2 + 0.2 * dance)
+            rr = _hsv((hue + 0.35) % 1.0, 0.6, 0.2 + 0.2 * dance)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
 
-    if command.mode == "mischievous_zigzag":
-        zigzag = 0.5 + 0.5 * math.sin(now * 10.0)
-        hue = 0.7 + 0.15 * math.sin(now * 8)
-        fl = _hsv(hue, 0.7, 0.4 + 0.4 * zigzag)
-        fr = _hsv((hue + 0.2) % 1.0, 0.7, 0.4 + 0.4 * zigzag)
-        ml = _hsv((hue + 0.4) % 1.0, 0.6, 0.3 + 0.3 * zigzag)
-        mr = _hsv((hue + 0.6) % 1.0, 0.6, 0.3 + 0.3 * zigzag)
-        rl = _hsv((hue + 0.8) % 1.0, 0.5, 0.2 + 0.2 * zigzag)
-        rr = _hsv(hue, 0.5, 0.2 + 0.2 * zigzag)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "serpentine":
+            hue = (now * 0.8) % 1.0
+            wave = 0.5 + 0.5 * math.sin(now * 3.0)
+            fl = _hsv(hue, 0.85, 0.6 + 0.3 * wave)
+            fr = _hsv((hue + 0.12) % 1.0, 0.85, 0.6 + 0.3 * wave)
+            ml = _hsv((hue + 0.24) % 1.0, 0.8, 0.5 + 0.3 * wave)
+            mr = _hsv((hue + 0.36) % 1.0, 0.8, 0.5 + 0.3 * wave)
+            rl = _hsv((hue + 0.48) % 1.0, 0.75, 0.4 + 0.3 * wave)
+            rr = _hsv((hue + 0.6) % 1.0, 0.75, 0.4 + 0.3 * wave)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
 
-    if command.mode == "proud_parade":
-        hue = 0.12 + 0.08 * math.sin(now * 4)
-        wave = 0.5 + 0.5 * math.sin(now * 6)
-        fl = _hsv(hue, 0.9, 0.6 + 0.4 * wave)
-        fr = _hsv((hue + 0.05) % 1.0, 0.9, 0.6 + 0.4 * wave)
-        ml = _hsv((hue + 0.1) % 1.0, 0.85, 0.5 + 0.3 * wave)
-        mr = _hsv((hue + 0.15) % 1.0, 0.85, 0.5 + 0.3 * wave)
-        rl = _hsv((hue + 0.2) % 1.0, 0.8, 0.4 + 0.2 * wave)
-        rr = _hsv((hue + 0.25) % 1.0, 0.8, 0.4 + 0.2 * wave)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        # Gen23: new emotional move underlighting
+        if command.mode == "explorer_pride":
+            progress = min(1.0, (now - controller.emotional_move_start) / max(controller.config.explorer_pride_duration, 0.01))
+            hue = 0.12 + 0.08 * math.sin(progress * math.pi)
+            rgb = hsv_to_rgb(hue, 0.9, 0.6 + 0.4 * math.sin(now * 4))
+            fl = _hsv(hue, 0.9, 0.7 + 0.3 * progress)
+            fr = _hsv((hue + 0.05) % 1.0, 0.9, 0.7 + 0.3 * progress)
+            ml = _hsv((hue + 0.1) % 1.0, 0.85, 0.5 + 0.3 * progress)
+            mr = _hsv((hue + 0.15) % 1.0, 0.85, 0.5 + 0.3 * progress)
+            rl = _hsv((hue + 0.2) % 1.0, 0.8, 0.4 + 0.2 * progress)
+            rr = _hsv((hue + 0.25) % 1.0, 0.8, 0.4 + 0.2 * progress)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
 
-    if command.mode == "wonder_gaze":
-        breathe = 0.5 + 0.5 * math.sin(now * 2)
-        hue = 0.55 + 0.2 * math.sin(now * 2)
-        fl = _hsv(hue, 0.6, 0.3 + 0.4 * breathe)
-        fr = _hsv(hue, 0.6, 0.3 + 0.4 * breathe)
-        ml = _hsv((hue + 0.1) % 1.0, 0.5, 0.2 + 0.3 * breathe)
-        mr = _hsv((hue + 0.1) % 1.0, 0.5, 0.2 + 0.3 * breathe)
-        rl = _hsv((hue + 0.2) % 1.0, 0.4, 0.15 + 0.2 * breathe)
-        rr = _hsv((hue + 0.2) % 1.0, 0.4, 0.15 + 0.2 * breathe)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "mapping_joy":
+            hue = (now * 0.5) % 1.0
+            wave = 0.5 + 0.5 * math.sin(now * 4.0)
+            fl = _hsv(hue, 0.85, 0.6 + 0.3 * wave)
+            fr = _hsv((hue + 0.17) % 1.0, 0.85, 0.6 + 0.3 * wave)
+            ml = _hsv((hue + 0.33) % 1.0, 0.8, 0.5 + 0.3 * wave)
+            mr = _hsv((hue + 0.5) % 1.0, 0.8, 0.5 + 0.3 * wave)
+            rl = _hsv((hue + 0.67) % 1.0, 0.75, 0.4 + 0.2 * wave)
+            rr = _hsv((hue + 0.83) % 1.0, 0.75, 0.4 + 0.2 * wave)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
 
-    if command.mode == "energetic_hop":
-        hop = 0.5 + 0.5 * math.sin(now * 10.0)
-        hue = 0.15 + 0.1 * math.sin(now * 12)
-        fl = _hsv(hue, 0.85, 0.6 + 0.4 * hop)
-        fr = _hsv((hue + 0.08) % 1.0, 0.85, 0.6 + 0.4 * hop)
-        ml = _hsv((hue + 0.16) % 1.0, 0.8, 0.5 + 0.3 * hop)
-        mr = _hsv((hue + 0.24) % 1.0, 0.8, 0.5 + 0.3 * hop)
-        rl = _hsv((hue + 0.32) % 1.0, 0.75, 0.4 + 0.2 * hop)
-        rr = _hsv((hue + 0.4) % 1.0, 0.75, 0.4 + 0.2 * hop)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "corridor_dance":
+            hue = 0.3 + 0.15 * math.sin(now * 5.0)
+            wave = 0.5 + 0.5 * math.sin(now * 6.0)
+            fl = _hsv(hue, 0.85, 0.6 + 0.3 * wave)
+            fr = _hsv((hue + 0.1) % 1.0, 0.85, 0.6 + 0.3 * wave)
+            ml = _hsv((hue + 0.2) % 1.0, 0.8, 0.5 + 0.3 * wave)
+            mr = _hsv((hue + 0.3) % 1.0, 0.8, 0.5 + 0.3 * wave)
+            rl = _hsv((hue + 0.4) % 1.0, 0.75, 0.4 + 0.2 * wave)
+            rr = _hsv((hue + 0.5) % 1.0, 0.75, 0.4 + 0.2 * wave)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
 
-    # Gen26: new emotional move underlighting
-    if command.mode == "flow_dance":
-        hue = (now * 3.0) % 1.0
-        wave = 0.5 + 0.5 * math.sin(now * 8.0)
-        fl = _hsv(hue, 0.95, 0.7 + 0.3 * wave)
-        fr = _hsv((hue + 0.12) % 1.0, 0.95, 0.7 + 0.3 * wave)
-        ml = _hsv((hue + 0.24) % 1.0, 0.9, 0.6 + 0.3 * wave)
-        mr = _hsv((hue + 0.36) % 1.0, 0.9, 0.6 + 0.3 * wave)
-        rl = _hsv((hue + 0.48) % 1.0, 0.85, 0.5 + 0.2 * wave)
-        rr = _hsv((hue + 0.6) % 1.0, 0.85, 0.5 + 0.2 * wave)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "open_space_celebration":
+            hue = (now * 3.0) % 1.0
+            burst = 0.5 + 0.5 * math.sin(now * 12.0)
+            fl = _hsv(hue, 0.95, 0.7 + 0.3 * burst)
+            fr = _hsv((hue + 0.17) % 1.0, 0.95, 0.7 + 0.3 * burst)
+            ml = _hsv((hue + 0.33) % 1.0, 0.9, 0.6 + 0.4 * burst)
+            mr = _hsv((hue + 0.5) % 1.0, 0.9, 0.6 + 0.4 * burst)
+            rl = _hsv((hue + 0.67) % 1.0, 0.85, 0.5 + 0.5 * burst)
+            rr = _hsv((hue + 0.83) % 1.0, 0.85, 0.5 + 0.5 * burst)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
 
-    if command.mode == "gratitude":
-        bow = math.sin((now - controller.emotional_move_start) / max(controller.config.gratitude_duration, 0.01) * math.pi)
-        gold = (int(200 + 55 * bow), int(160 + 70 * bow), int(40 * bow))
-        tbot.set_underlight(LIGHT_FRONT_LEFT, *gold, show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, *gold, show=False)
-        mid = (int(180 + 40 * bow), int(140 + 50 * bow), int(30 * bow))
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid, show=False)
-        rear = (int(160 + 30 * bow), int(120 + 40 * bow), int(20 * bow))
-        tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "wall_caress":
+            hue = 0.25 + 0.08 * math.sin(now * 3.0)
+            wave = 0.5 + 0.5 * math.sin(now * 2.5)
+            fl = _hsv(hue, 0.7, 0.5 + 0.3 * wave)
+            fr = _hsv(hue, 0.7, 0.5 + 0.3 * wave)
+            ml = _hsv((hue + 0.05) % 1.0, 0.65, 0.4 + 0.2 * wave)
+            mr = _hsv((hue + 0.05) % 1.0, 0.65, 0.4 + 0.2 * wave)
+            rl = _hsv((hue + 0.1) % 1.0, 0.6, 0.3 + 0.2 * wave)
+            rr = _hsv((hue + 0.1) % 1.0, 0.6, 0.3 + 0.2 * wave)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
 
-    if command.mode == "relief":
-        sigh = 0.5 + 0.5 * math.sin(now * 2.0)
-        hue = 0.35 + 0.1 * math.sin(now * 3)
-        fl = _hsv(hue, 0.6, 0.4 + 0.3 * sigh)
-        fr = _hsv(hue, 0.6, 0.4 + 0.3 * sigh)
-        ml = _hsv((hue + 0.05) % 1.0, 0.5, 0.3 + 0.2 * sigh)
-        mr = _hsv((hue + 0.05) % 1.0, 0.5, 0.3 + 0.2 * sigh)
-        rl = _hsv((hue + 0.1) % 1.0, 0.4, 0.2 + 0.15 * sigh)
-        rr = _hsv((hue + 0.1) % 1.0, 0.4, 0.2 + 0.15 * sigh)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "discovery_spin":
+            hue = (now * 4.0) % 1.0
+            spin = 0.5 + 0.5 * math.sin(now * 10.0)
+            fl = _hsv(hue, 0.9, 0.7 + 0.3 * spin)
+            fr = _hsv((hue + 0.25) % 1.0, 0.9, 0.7 + 0.3 * spin)
+            ml = _hsv((hue + 0.5) % 1.0, 0.85, 0.6 + 0.3 * spin)
+            mr = _hsv((hue + 0.75) % 1.0, 0.85, 0.6 + 0.3 * spin)
+            rl = _hsv(hue, 0.8, 0.5 + 0.3 * spin)
+            rr = _hsv((hue + 0.5) % 1.0, 0.8, 0.5 + 0.3 * spin)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
 
-    if command.mode == "wonder":
-        gaze = 0.5 + 0.5 * math.sin(now * 1.5)
-        hue = 0.55 + 0.25 * math.sin(now * 2)
-        fl = _hsv(hue, 0.6, 0.3 + 0.4 * gaze)
-        fr = _hsv(hue, 0.6, 0.3 + 0.4 * gaze)
-        ml = _hsv((hue + 0.1) % 1.0, 0.5, 0.2 + 0.3 * gaze)
-        mr = _hsv((hue + 0.1) % 1.0, 0.5, 0.2 + 0.3 * gaze)
-        rl = _hsv((hue + 0.2) % 1.0, 0.4, 0.15 + 0.2 * gaze)
-        rr = _hsv((hue + 0.2) % 1.0, 0.4, 0.15 + 0.2 * gaze)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        # Gen24: new emotional move underlighting
+        if command.mode == "curious_probe":
+            probe = 0.5 + 0.5 * math.sin(now * 5.0)
+            cyan = (int(40 * probe), int(180 + 75 * probe), int(200 + 55 * probe))
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *cyan, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *cyan, show=False)
+            mid = (int(30 * probe), int(160 + 60 * probe), int(180 + 40 * probe))
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid, show=False)
+            rear = (int(20 * probe), int(140 + 50 * probe), int(160 + 30 * probe))
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
+            tbot.show_underlighting()
+            return
 
-    if command.mode == "playful_dart":
-        hue = (now * 4.0) % 1.0
-        dart = 0.5 + 0.5 * math.sin(now * 12.0)
-        fl = _hsv(hue, 0.9, 0.7 + 0.3 * dart)
-        fr = _hsv((hue + 0.17) % 1.0, 0.9, 0.7 + 0.3 * dart)
-        ml = _hsv((hue + 0.33) % 1.0, 0.85, 0.6 + 0.3 * dart)
-        mr = _hsv((hue + 0.5) % 1.0, 0.85, 0.6 + 0.3 * dart)
-        rl = _hsv((hue + 0.67) % 1.0, 0.8, 0.5 + 0.2 * dart)
-        rr = _hsv((hue + 0.83) % 1.0, 0.8, 0.5 + 0.2 * dart)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "excited_wiggle":
+            hue = (now * 3.0) % 1.0
+            wiggle = 0.5 + 0.5 * math.sin(now * 12.0)
+            fl = _hsv(hue, 0.9, 0.7 + 0.3 * wiggle)
+            fr = _hsv((hue + 0.2) % 1.0, 0.9, 0.7 + 0.3 * wiggle)
+            ml = _hsv((hue + 0.4) % 1.0, 0.85, 0.6 + 0.4 * wiggle)
+            mr = _hsv((hue + 0.6) % 1.0, 0.85, 0.6 + 0.4 * wiggle)
+            rl = _hsv((hue + 0.8) % 1.0, 0.8, 0.5 + 0.3 * wiggle)
+            rr = _hsv(hue, 0.8, 0.5 + 0.3 * wiggle)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
 
-    if command.mode == "victory_bow":
-        progress = min(1.0, (now - controller.emotional_move_start) / max(controller.config.victory_bow_duration, 0.01))
-        hue = 0.12 + 0.08 * math.sin(progress * math.pi * 3)
-        bow = math.sin(progress * math.pi)
-        fl = _hsv(hue, 0.9, 0.6 + 0.4 * bow)
-        fr = _hsv((hue + 0.05) % 1.0, 0.9, 0.6 + 0.4 * bow)
-        ml = _hsv((hue + 0.1) % 1.0, 0.85, 0.5 + 0.3 * bow)
-        mr = _hsv((hue + 0.15) % 1.0, 0.85, 0.5 + 0.3 * bow)
-        rl = _hsv((hue + 0.2) % 1.0, 0.8, 0.4 + 0.2 * bow)
-        rr = _hsv((hue + 0.25) % 1.0, 0.8, 0.4 + 0.2 * bow)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "contemplative_pause":
+            breathe = 0.5 + 0.5 * math.sin(now * 1.5)
+            indigo = (int(80 + 60 * breathe), int(20 * (1.0 - breathe)), int(180 + 75 * breathe))
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *indigo, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *indigo, show=False)
+            mid = (int(60 + 40 * breathe), int(15 * (1.0 - breathe)), int(140 + 60 * breathe))
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid, show=False)
+            rear = (int(40 + 30 * breathe), int(10 * (1.0 - breathe)), int(100 + 50 * breathe))
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
+            tbot.show_underlighting()
+            return
 
-    if command.mode == "contented_sway":
-        sway = 0.5 + 0.5 * math.sin(now * 2.0)
-        hue = 0.35 + 0.08 * math.sin(now * 1.5)
-        fl = _hsv(hue, 0.5, 0.4 + 0.3 * sway)
-        fr = _hsv(hue, 0.5, 0.4 + 0.3 * sway)
-        ml = _hsv((hue + 0.05) % 1.0, 0.4, 0.3 + 0.2 * sway)
-        mr = _hsv((hue + 0.05) % 1.0, 0.4, 0.3 + 0.2 * sway)
-        rl = _hsv((hue + 0.1) % 1.0, 0.3, 0.2 + 0.15 * sway)
-        rr = _hsv((hue + 0.1) % 1.0, 0.3, 0.2 + 0.15 * sway)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "confident_cruise":
+            hue = 0.35 + 0.05 * math.sin(now * 2)
+            pulse = 0.5 + 0.5 * math.sin(now * 3)
+            rgb = _hsv(hue, 0.7, 0.5 + 0.3 * pulse)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *rgb, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *rgb, show=False)
+            mid = _hsv((hue + 0.05) % 1.0, 0.65, 0.4 + 0.2 * pulse)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid, show=False)
+            rear = _hsv((hue + 0.1) % 1.0, 0.6, 0.3 + 0.2 * pulse)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
+            tbot.show_underlighting()
+            return
 
-    if command.mode == "triumphant_burst":
-        progress = min(1.0, (now - controller.emotional_move_start) / max(controller.config.triumphant_burst_duration, 0.01))
-        hue = (now * 4.0) % 1.0
-        burst = 0.5 + 0.5 * math.sin(now * 10.0)
-        fl = _hsv(hue, 0.95, 0.5 + 0.5 * progress)
-        fr = _hsv((hue + 0.12) % 1.0, 0.95, 0.5 + 0.5 * progress)
-        ml = _hsv((hue + 0.24) % 1.0, 0.9, 0.5 + 0.3 * burst)
-        mr = _hsv((hue + 0.36) % 1.0, 0.9, 0.5 + 0.3 * burst)
-        rl = _hsv((hue + 0.48) % 1.0, 0.85, 0.4 + 0.2 * burst)
-        rr = _hsv((hue + 0.6) % 1.0, 0.85, 0.4 + 0.2 * burst)
-        tbot.set_underlight(LIGHT_FRONT_LEFT, int(fl[0] * 255), int(fl[1] * 255), int(fl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT, int(fr[0] * 255), int(fr[1] * 255), int(fr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT, int(ml[0] * 255), int(ml[1] * 255), int(ml[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, int(mr[0] * 255), int(mr[1] * 255), int(mr[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT, int(rl[0] * 255), int(rl[1] * 255), int(rl[2] * 255), show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT, int(rr[0] * 255), int(rr[1] * 255), int(rr[2] * 255), show=False)
-        tbot.show_underlighting()
-        return
+        if command.mode == "explorer_sprint":
+            hue = (now * 2.5) % 1.0
+            sprint = 0.5 + 0.5 * math.sin(now * 10.0)
+            fl = _hsv(hue, 0.95, 0.6 + 0.4 * sprint)
+            fr = _hsv((hue + 0.12) % 1.0, 0.95, 0.6 + 0.4 * sprint)
+            ml = _hsv((hue + 0.24) % 1.0, 0.9, 0.5 + 0.3 * sprint)
+            mr = _hsv((hue + 0.36) % 1.0, 0.9, 0.5 + 0.3 * sprint)
+            rl = _hsv((hue + 0.48) % 1.0, 0.85, 0.4 + 0.3 * sprint)
+            rr = _hsv((hue + 0.6) % 1.0, 0.85, 0.4 + 0.3 * sprint)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
 
-    # Gen26: emotional drive lighting — expressive per-LED patterns during drive
-    if controller.config.emotional_drive_lighting and command.mode == "drive":
-        phase = controller.drive_lighting_phase
-        local_speed = controller.current_speed
-        local_front = controller.sanitize_distance(controller.last_scan.get(0, cfg.cruise_distance))
-        speed_ratio = min(1.0, local_speed / max(cfg.open_space_speed, 0.01))
-        breath_rate = cfg.drive_breathing_rate + speed_ratio * cfg.drive_breathing_rate
-        breathe = 0.5 + 0.5 * math.sin(now * breath_rate)
+        if command.mode == "cautious_approach":
+            progress = min(1.0, (now - controller.emotional_move_start) / max(controller.config.cautious_approach_duration, 0.01))
+            intensity = 0.2 + 0.5 * progress
+            flicker = 0.5 + 0.5 * math.sin(now * 8.0)
+            front = (int(160 + 80 * flicker), int(30 * intensity), 0)
+            mid = (int(120 + 60 * flicker), int(20 * intensity), 0)
+            rear = (int(80 + 40 * flicker), int(15 * intensity), 0)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *front, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *front, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
+            tbot.show_underlighting()
+            return
 
-        if controller.current_mood == "celebration":
-            hue = (now * cfg.mood_celebration_rainbow_speed) % 1.0
-            fl = _hsv(hue, 0.95, 0.6 + 0.4 * breathe)
-            fr = _hsv((hue + 0.17) % 1.0, 0.95, 0.6 + 0.4 * breathe)
-            ml = _hsv((hue + 0.33) % 1.0, 0.9, 0.5 + 0.3 * breathe)
-            mr = _hsv((hue + 0.5) % 1.0, 0.9, 0.5 + 0.3 * breathe)
-            rl = _hsv((hue + 0.67) % 1.0, 0.85, 0.4 + 0.2 * breathe)
-            rr = _hsv((hue + 0.83) % 1.0, 0.85, 0.4 + 0.2 * breathe)
-        elif controller.gratitude_level > 0.5:
-            hue = 0.12 + 0.05 * math.sin(now * 1.5)
-            glow = 0.5 + 0.5 * math.sin(now * 2.0)
-            fl = _hsv(hue, 0.8, 0.5 + 0.4 * glow)
-            fr = _hsv(hue, 0.8, 0.5 + 0.4 * glow)
-            ml = _hsv((hue + 0.03) % 1.0, 0.7, 0.4 + 0.3 * glow)
-            mr = _hsv((hue + 0.03) % 1.0, 0.7, 0.4 + 0.3 * glow)
-            rl = _hsv((hue + 0.06) % 1.0, 0.6, 0.3 + 0.2 * glow)
-            rr = _hsv((hue + 0.06) % 1.0, 0.6, 0.3 + 0.2 * glow)
-        elif controller.wonder_level > 0.5:
-            hue = 0.55 + 0.2 * math.sin(now * 1.0)
-            gaze = 0.5 + 0.5 * math.sin(now * 0.8)
+        if command.mode == "joyful_bounce":
+            hue = 0.12 + 0.08 * math.sin(now * 8)
+            bounce = 0.5 + 0.5 * math.sin(now * 10.0)
+            fl = _hsv(hue, 0.85, 0.6 + 0.4 * bounce)
+            fr = _hsv((hue + 0.08) % 1.0, 0.85, 0.6 + 0.4 * bounce)
+            ml = _hsv((hue + 0.16) % 1.0, 0.8, 0.5 + 0.3 * bounce)
+            mr = _hsv((hue + 0.24) % 1.0, 0.8, 0.5 + 0.3 * bounce)
+            rl = _hsv((hue + 0.32) % 1.0, 0.75, 0.4 + 0.2 * bounce)
+            rr = _hsv((hue + 0.4) % 1.0, 0.75, 0.4 + 0.2 * bounce)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "discovery_celebration":
+            hue = (now * 3.0) % 1.0
+            burst = 0.5 + 0.5 * math.sin(now * 12.0)
+            fl = _hsv(hue, 0.95, 0.7 + 0.3 * burst)
+            fr = _hsv((hue + 0.17) % 1.0, 0.95, 0.7 + 0.3 * burst)
+            ml = _hsv((hue + 0.33) % 1.0, 0.9, 0.6 + 0.4 * burst)
+            mr = _hsv((hue + 0.5) % 1.0, 0.9, 0.6 + 0.4 * burst)
+            rl = _hsv((hue + 0.67) % 1.0, 0.85, 0.5 + 0.5 * burst)
+            rr = _hsv((hue + 0.83) % 1.0, 0.85, 0.5 + 0.5 * burst)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "wander":
+            elapsed = now - controller.wander_start_time if controller.wander_active else 0
+            hue = 0.55 + 0.15 * math.sin(elapsed * 3)
+            wave = 0.5 + 0.5 * math.sin(now * 2.5)
+            fl = _hsv(hue, 0.7, 0.5 + 0.3 * wave)
+            fr = _hsv((hue + 0.08) % 1.0, 0.7, 0.5 + 0.3 * wave)
+            ml = _hsv((hue + 0.16) % 1.0, 0.6, 0.4 + 0.2 * wave)
+            mr = _hsv((hue + 0.24) % 1.0, 0.6, 0.4 + 0.2 * wave)
+            rl = _hsv((hue + 0.32) % 1.0, 0.5, 0.3 + 0.2 * wave)
+            rr = _hsv((hue + 0.4) % 1.0, 0.5, 0.3 + 0.2 * wave)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "edge_patrol":
+            elapsed = now - controller.edge_patrol_start_time if controller.edge_patrol_active else 0
+            hue = 0.15 + 0.1 * math.sin(elapsed * 2)
+            wave = 0.5 + 0.5 * math.sin(now * 3)
+            fl = _hsv(hue, 0.8, 0.5 + 0.3 * wave)
+            fr = _hsv(hue, 0.8, 0.5 + 0.3 * wave)
+            ml = _hsv((hue + 0.05) % 1.0, 0.7, 0.4 + 0.2 * wave)
+            mr = _hsv((hue + 0.05) % 1.0, 0.7, 0.4 + 0.2 * wave)
+            rl = _hsv((hue + 0.1) % 1.0, 0.6, 0.3 + 0.2 * wave)
+            rr = _hsv((hue + 0.1) % 1.0, 0.6, 0.3 + 0.2 * wave)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        # Gen25: new emotional move underlighting
+        if command.mode == "joyful_spin":
+            hue = (now * 4.0) % 1.0
+            spin = 0.5 + 0.5 * math.sin(now * 10.0)
+            fl = _hsv(hue, 0.95, 0.7 + 0.3 * spin)
+            fr = _hsv((hue + 0.25) % 1.0, 0.95, 0.7 + 0.3 * spin)
+            ml = _hsv((hue + 0.5) % 1.0, 0.85, 0.6 + 0.3 * spin)
+            mr = _hsv((hue + 0.75) % 1.0, 0.85, 0.6 + 0.3 * spin)
+            rl = _hsv(hue, 0.8, 0.5 + 0.3 * spin)
+            rr = _hsv((hue + 0.5) % 1.0, 0.8, 0.5 + 0.3 * spin)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "curious_weave":
+            weave = 0.5 + 0.5 * math.sin(now * 4.0)
+            cyan = (int(40 * weave), int(180 + 75 * weave), int(200 + 55 * weave))
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *cyan, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *cyan, show=False)
+            mid = (int(30 * weave), int(160 + 60 * weave), int(180 + 40 * weave))
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid, show=False)
+            rear = (int(20 * weave), int(140 + 50 * weave), int(160 + 30 * weave))
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "excited_dash":
+            progress = min(1.0, (now - controller.emotional_move_start) / max(controller.config.excited_dash_duration, 0.01))
+            hue = 0.1 + 0.15 * math.sin(now * 10)
+            rgb = _hsv(hue, 0.95, 0.5 + 0.5 * progress)
+            tbot.fill_underlighting(*rgb)
+            return
+
+        if command.mode == "peaceful_glide":
+            breathe = 0.5 + 0.5 * math.sin(now * 1.5)
+            hue = 0.35 + 0.08 * math.sin(now * 1.5)
+            fl = _hsv(hue, 0.5, 0.4 + 0.3 * breathe)
+            fr = _hsv(hue, 0.5, 0.4 + 0.3 * breathe)
+            ml = _hsv((hue + 0.05) % 1.0, 0.4, 0.3 + 0.2 * breathe)
+            mr = _hsv((hue + 0.05) % 1.0, 0.4, 0.3 + 0.2 * breathe)
+            rl = _hsv((hue + 0.1) % 1.0, 0.3, 0.2 + 0.15 * breathe)
+            rr = _hsv((hue + 0.1) % 1.0, 0.3, 0.2 + 0.15 * breathe)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "mischievous_zigzag":
+            zigzag = 0.5 + 0.5 * math.sin(now * 10.0)
+            hue = 0.7 + 0.15 * math.sin(now * 8)
+            fl = _hsv(hue, 0.7, 0.4 + 0.4 * zigzag)
+            fr = _hsv((hue + 0.2) % 1.0, 0.7, 0.4 + 0.4 * zigzag)
+            ml = _hsv((hue + 0.4) % 1.0, 0.6, 0.3 + 0.3 * zigzag)
+            mr = _hsv((hue + 0.6) % 1.0, 0.6, 0.3 + 0.3 * zigzag)
+            rl = _hsv((hue + 0.8) % 1.0, 0.5, 0.2 + 0.2 * zigzag)
+            rr = _hsv(hue, 0.5, 0.2 + 0.2 * zigzag)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "proud_parade":
+            hue = 0.12 + 0.08 * math.sin(now * 4)
+            wave = 0.5 + 0.5 * math.sin(now * 6)
+            fl = _hsv(hue, 0.9, 0.6 + 0.4 * wave)
+            fr = _hsv((hue + 0.05) % 1.0, 0.9, 0.6 + 0.4 * wave)
+            ml = _hsv((hue + 0.1) % 1.0, 0.85, 0.5 + 0.3 * wave)
+            mr = _hsv((hue + 0.15) % 1.0, 0.85, 0.5 + 0.3 * wave)
+            rl = _hsv((hue + 0.2) % 1.0, 0.8, 0.4 + 0.2 * wave)
+            rr = _hsv((hue + 0.25) % 1.0, 0.8, 0.4 + 0.2 * wave)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "wonder_gaze":
+            breathe = 0.5 + 0.5 * math.sin(now * 2)
+            hue = 0.55 + 0.2 * math.sin(now * 2)
+            fl = _hsv(hue, 0.6, 0.3 + 0.4 * breathe)
+            fr = _hsv(hue, 0.6, 0.3 + 0.4 * breathe)
+            ml = _hsv((hue + 0.1) % 1.0, 0.5, 0.2 + 0.3 * breathe)
+            mr = _hsv((hue + 0.1) % 1.0, 0.5, 0.2 + 0.3 * breathe)
+            rl = _hsv((hue + 0.2) % 1.0, 0.4, 0.15 + 0.2 * breathe)
+            rr = _hsv((hue + 0.2) % 1.0, 0.4, 0.15 + 0.2 * breathe)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "energetic_hop":
+            hop = 0.5 + 0.5 * math.sin(now * 10.0)
+            hue = 0.15 + 0.1 * math.sin(now * 12)
+            fl = _hsv(hue, 0.85, 0.6 + 0.4 * hop)
+            fr = _hsv((hue + 0.08) % 1.0, 0.85, 0.6 + 0.4 * hop)
+            ml = _hsv((hue + 0.16) % 1.0, 0.8, 0.5 + 0.3 * hop)
+            mr = _hsv((hue + 0.24) % 1.0, 0.8, 0.5 + 0.3 * hop)
+            rl = _hsv((hue + 0.32) % 1.0, 0.75, 0.4 + 0.2 * hop)
+            rr = _hsv((hue + 0.4) % 1.0, 0.75, 0.4 + 0.2 * hop)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        # Gen26: new emotional move underlighting
+        if command.mode == "flow_dance":
+            hue = (now * 3.0) % 1.0
+            wave = 0.5 + 0.5 * math.sin(now * 8.0)
+            fl = _hsv(hue, 0.95, 0.7 + 0.3 * wave)
+            fr = _hsv((hue + 0.12) % 1.0, 0.95, 0.7 + 0.3 * wave)
+            ml = _hsv((hue + 0.24) % 1.0, 0.9, 0.6 + 0.3 * wave)
+            mr = _hsv((hue + 0.36) % 1.0, 0.9, 0.6 + 0.3 * wave)
+            rl = _hsv((hue + 0.48) % 1.0, 0.85, 0.5 + 0.2 * wave)
+            rr = _hsv((hue + 0.6) % 1.0, 0.85, 0.5 + 0.2 * wave)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "gratitude":
+            bow = math.sin((now - controller.emotional_move_start) / max(controller.config.gratitude_duration, 0.01) * math.pi)
+            gold = (int(200 + 55 * bow), int(160 + 70 * bow), int(40 * bow))
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *gold, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *gold, show=False)
+            mid = (int(180 + 40 * bow), int(140 + 50 * bow), int(30 * bow))
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid, show=False)
+            rear = (int(160 + 30 * bow), int(120 + 40 * bow), int(20 * bow))
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "relief":
+            sigh = 0.5 + 0.5 * math.sin(now * 2.0)
+            hue = 0.35 + 0.1 * math.sin(now * 3)
+            fl = _hsv(hue, 0.6, 0.4 + 0.3 * sigh)
+            fr = _hsv(hue, 0.6, 0.4 + 0.3 * sigh)
+            ml = _hsv((hue + 0.05) % 1.0, 0.5, 0.3 + 0.2 * sigh)
+            mr = _hsv((hue + 0.05) % 1.0, 0.5, 0.3 + 0.2 * sigh)
+            rl = _hsv((hue + 0.1) % 1.0, 0.4, 0.2 + 0.15 * sigh)
+            rr = _hsv((hue + 0.1) % 1.0, 0.4, 0.2 + 0.15 * sigh)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "wonder":
+            gaze = 0.5 + 0.5 * math.sin(now * 1.5)
+            hue = 0.55 + 0.25 * math.sin(now * 2)
             fl = _hsv(hue, 0.6, 0.3 + 0.4 * gaze)
             fr = _hsv(hue, 0.6, 0.3 + 0.4 * gaze)
             ml = _hsv((hue + 0.1) % 1.0, 0.5, 0.2 + 0.3 * gaze)
             mr = _hsv((hue + 0.1) % 1.0, 0.5, 0.2 + 0.3 * gaze)
             rl = _hsv((hue + 0.2) % 1.0, 0.4, 0.15 + 0.2 * gaze)
             rr = _hsv((hue + 0.2) % 1.0, 0.4, 0.15 + 0.2 * gaze)
-        elif controller.flow_dance_level > 0.5:
-            hue = (now * 2.5) % 1.0
-            dance = 0.5 + 0.5 * math.sin(now * 6.0)
-            fl = _hsv(hue, 0.9, 0.6 + 0.4 * dance)
-            fr = _hsv((hue + 0.12) % 1.0, 0.9, 0.6 + 0.4 * dance)
-            ml = _hsv((hue + 0.24) % 1.0, 0.85, 0.5 + 0.3 * dance)
-            mr = _hsv((hue + 0.36) % 1.0, 0.85, 0.5 + 0.3 * dance)
-            rl = _hsv((hue + 0.48) % 1.0, 0.8, 0.4 + 0.2 * dance)
-            rr = _hsv((hue + 0.6) % 1.0, 0.8, 0.4 + 0.2 * dance)
-        elif controller.relief_level > 0.5:
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "playful_dart":
+            hue = (now * 4.0) % 1.0
+            dart = 0.5 + 0.5 * math.sin(now * 12.0)
+            fl = _hsv(hue, 0.9, 0.7 + 0.3 * dart)
+            fr = _hsv((hue + 0.17) % 1.0, 0.9, 0.7 + 0.3 * dart)
+            ml = _hsv((hue + 0.33) % 1.0, 0.85, 0.6 + 0.3 * dart)
+            mr = _hsv((hue + 0.5) % 1.0, 0.85, 0.6 + 0.3 * dart)
+            rl = _hsv((hue + 0.67) % 1.0, 0.8, 0.5 + 0.2 * dart)
+            rr = _hsv((hue + 0.83) % 1.0, 0.8, 0.5 + 0.2 * dart)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "victory_bow":
+            progress = min(1.0, (now - controller.emotional_move_start) / max(controller.config.victory_bow_duration, 0.01))
+            hue = 0.12 + 0.08 * math.sin(progress * math.pi * 3)
+            bow = math.sin(progress * math.pi)
+            fl = _hsv(hue, 0.9, 0.6 + 0.4 * bow)
+            fr = _hsv((hue + 0.05) % 1.0, 0.9, 0.6 + 0.4 * bow)
+            ml = _hsv((hue + 0.1) % 1.0, 0.85, 0.5 + 0.3 * bow)
+            mr = _hsv((hue + 0.15) % 1.0, 0.85, 0.5 + 0.3 * bow)
+            rl = _hsv((hue + 0.2) % 1.0, 0.8, 0.4 + 0.2 * bow)
+            rr = _hsv((hue + 0.25) % 1.0, 0.8, 0.4 + 0.2 * bow)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "contented_sway":
+            sway = 0.5 + 0.5 * math.sin(now * 2.0)
             hue = 0.35 + 0.08 * math.sin(now * 1.5)
-            sigh = 0.5 + 0.5 * math.sin(now * 1.2)
-            fl = _hsv(hue, 0.5, 0.4 + 0.3 * sigh)
-            fr = _hsv(hue, 0.5, 0.4 + 0.3 * sigh)
-            ml = _hsv((hue + 0.05) % 1.0, 0.4, 0.3 + 0.2 * sigh)
-            mr = _hsv((hue + 0.05) % 1.0, 0.4, 0.3 + 0.2 * sigh)
-            rl = _hsv((hue + 0.1) % 1.0, 0.3, 0.2 + 0.15 * sigh)
-            rr = _hsv((hue + 0.1) % 1.0, 0.3, 0.2 + 0.15 * sigh)
-        elif controller.playfulness_level > 0.7:
-            hue = (now * 1.5) % 1.0
-            play = 0.5 + 0.5 * math.sin(now * 4.0)
-            fl = _hsv(hue, 0.85, 0.5 + 0.4 * play)
-            fr = _hsv((hue + 0.2) % 1.0, 0.85, 0.5 + 0.4 * play)
-            ml = _hsv((hue + 0.4) % 1.0, 0.75, 0.4 + 0.3 * play)
-            mr = _hsv((hue + 0.6) % 1.0, 0.75, 0.4 + 0.3 * play)
-            rl = _hsv((hue + 0.8) % 1.0, 0.65, 0.3 + 0.2 * play)
-            rr = _hsv(hue, 0.65, 0.3 + 0.2 * play)
-        elif controller.satisfaction_level > 0.6:
-            hue = 0.1 + 0.05 * math.sin(now * 1.0)
-            purr = 0.5 + 0.5 * math.sin(now * 2.0)
-            fl = _hsv(hue, 0.7, 0.5 + 0.3 * purr)
-            fr = _hsv(hue, 0.7, 0.5 + 0.3 * purr)
-            ml = _hsv((hue + 0.03) % 1.0, 0.6, 0.4 + 0.2 * purr)
-            mr = _hsv((hue + 0.03) % 1.0, 0.6, 0.4 + 0.2 * purr)
-            rl = _hsv((hue + 0.06) % 1.0, 0.5, 0.3 + 0.15 * purr)
-            rr = _hsv((hue + 0.06) % 1.0, 0.5, 0.3 + 0.15 * purr)
-        elif controller.current_mood == "confident":
-            hue = 0.78 + 0.03 * math.sin(now * 1.5)
-            glow = 0.5 + 0.5 * math.sin(now * cfg.drive_breathing_rate)
-            fl = _hsv(hue, 0.8, 0.5 + 0.4 * glow)
-            fr = _hsv(hue, 0.8, 0.5 + 0.4 * glow)
-            ml = _hsv((hue + 0.05) % 1.0, 0.7, 0.4 + 0.3 * glow)
-            mr = _hsv((hue + 0.05) % 1.0, 0.7, 0.4 + 0.3 * glow)
-            rl = _hsv((hue + 0.1) % 1.0, 0.6, 0.3 + 0.2 * glow)
-            rr = _hsv((hue + 0.1) % 1.0, 0.6, 0.3 + 0.2 * glow)
-        elif controller.current_mood == "exploring":
-            hue = (now * cfg.mood_exploring_hue_speed) % 1.0
-            wave = 0.5 + 0.5 * math.sin(now * 2.0)
-            fl = _hsv(hue, 0.7, 0.4 + 0.3 * wave)
-            fr = _hsv((hue + 0.08) % 1.0, 0.7, 0.4 + 0.3 * wave)
-            ml = _hsv((hue + 0.16) % 1.0, 0.6, 0.3 + 0.2 * wave)
-            mr = _hsv((hue + 0.24) % 1.0, 0.6, 0.3 + 0.2 * wave)
-            rl = _hsv((hue + 0.32) % 1.0, 0.5, 0.2 + 0.15 * wave)
-            rr = _hsv((hue + 0.4) % 1.0, 0.5, 0.2 + 0.15 * wave)
-        elif controller.current_mood == "stressed":
-            flicker = 0.5 + 0.5 * math.sin(now * cfg.mood_stressed_flicker_rate)
-            fl = _hsv(0.02, 0.9, 0.3 + 0.4 * flicker)
-            fr = _hsv(0.02, 0.9, 0.3 + 0.4 * flicker)
-            ml = _hsv(0.03, 0.8, 0.2 + 0.2 * flicker)
-            mr = _hsv(0.03, 0.8, 0.2 + 0.2 * flicker)
-            rl = _hsv(0.04, 0.7, 0.15 + 0.15 * flicker)
-            rr = _hsv(0.04, 0.7, 0.15 + 0.15 * flicker)
-        else:
-            # Default: distance-based with subtle breathing
-            if local_front <= cfg.danger_distance:
-                pulse = 0.5 + 0.5 * math.sin(now * 6.0)
-                fl = _hsv(0.02, 0.9, 0.4 + 0.4 * pulse)
-                fr = _hsv(0.02, 0.9, 0.4 + 0.4 * pulse)
-                ml = _hsv(0.03, 0.8, 0.2 + 0.2 * pulse)
-                mr = _hsv(0.03, 0.8, 0.2 + 0.2 * pulse)
-                rl = _hsv(0.04, 0.7, 0.15 + 0.15 * pulse)
-                rr = _hsv(0.04, 0.7, 0.15 + 0.15 * pulse)
-            elif local_front <= cfg.caution_distance:
-                t = (local_front - cfg.danger_distance) / max(cfg.caution_distance - cfg.danger_distance, 1.0)
-                hue = 0.08 + 0.05 * t
-                fl = _hsv(hue, 0.85, 0.4 + 0.3 * breathe)
-                fr = _hsv(hue, 0.85, 0.4 + 0.3 * breathe)
-                ml = _hsv((hue + 0.03) % 1.0, 0.7, 0.3 + 0.2 * breathe)
-                mr = _hsv((hue + 0.03) % 1.0, 0.7, 0.3 + 0.2 * breathe)
-                rl = _hsv((hue + 0.06) % 1.0, 0.6, 0.2 + 0.15 * breathe)
-                rr = _hsv((hue + 0.06) % 1.0, 0.6, 0.2 + 0.15 * breathe)
-            elif local_front <= cfg.cruise_distance:
-                t = (local_front - cfg.caution_distance) / max(cfg.cruise_distance - cfg.caution_distance, 1.0)
-                hue = 0.15 + 0.15 * t
-                fl = _hsv(hue, 0.8, 0.4 + 0.3 * breathe)
-                fr = _hsv(hue, 0.8, 0.4 + 0.3 * breathe)
-                ml = _hsv((hue + 0.05) % 1.0, 0.7, 0.3 + 0.2 * breathe)
-                mr = _hsv((hue + 0.05) % 1.0, 0.7, 0.3 + 0.2 * breathe)
-                rl = _hsv((hue + 0.1) % 1.0, 0.6, 0.2 + 0.15 * breathe)
-                rr = _hsv((hue + 0.1) % 1.0, 0.6, 0.2 + 0.15 * breathe)
+            fl = _hsv(hue, 0.5, 0.4 + 0.3 * sway)
+            fr = _hsv(hue, 0.5, 0.4 + 0.3 * sway)
+            ml = _hsv((hue + 0.05) % 1.0, 0.4, 0.3 + 0.2 * sway)
+            mr = _hsv((hue + 0.05) % 1.0, 0.4, 0.3 + 0.2 * sway)
+            rl = _hsv((hue + 0.1) % 1.0, 0.3, 0.2 + 0.15 * sway)
+            rr = _hsv((hue + 0.1) % 1.0, 0.3, 0.2 + 0.15 * sway)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "triumphant_burst":
+            progress = min(1.0, (now - controller.emotional_move_start) / max(controller.config.triumphant_burst_duration, 0.01))
+            hue = (now * 4.0) % 1.0
+            burst = 0.5 + 0.5 * math.sin(now * 10.0)
+            fl = _hsv(hue, 0.95, 0.5 + 0.5 * progress)
+            fr = _hsv((hue + 0.12) % 1.0, 0.95, 0.5 + 0.5 * progress)
+            ml = _hsv((hue + 0.24) % 1.0, 0.9, 0.5 + 0.3 * burst)
+            mr = _hsv((hue + 0.36) % 1.0, 0.9, 0.5 + 0.3 * burst)
+            rl = _hsv((hue + 0.48) % 1.0, 0.85, 0.4 + 0.2 * burst)
+            rr = _hsv((hue + 0.6) % 1.0, 0.85, 0.4 + 0.2 * burst)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        # Gen27: new emotional move underlighting
+        if command.mode == "straight_streak_celebration":
+            progress = min(1.0, (now - controller.emotional_move_start) / max(controller.config.straight_streak_celebration_duration, 0.01))
+            hue = 0.12 + 0.08 * math.sin(progress * math.pi * 3)
+            wave = 0.5 + 0.5 * math.sin(now * 6.0)
+            fl = _hsv(hue, 0.9, 0.6 + 0.4 * wave)
+            fr = _hsv((hue + 0.05) % 1.0, 0.9, 0.6 + 0.4 * wave)
+            ml = _hsv((hue + 0.1) % 1.0, 0.85, 0.5 + 0.3 * wave)
+            mr = _hsv((hue + 0.15) % 1.0, 0.85, 0.5 + 0.3 * wave)
+            rl = _hsv((hue + 0.2) % 1.0, 0.8, 0.4 + 0.2 * wave)
+            rr = _hsv((hue + 0.25) % 1.0, 0.8, 0.4 + 0.2 * wave)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "open_space_joy":
+            breathe = 0.5 + 0.5 * math.sin(now * 2.0)
+            hue = 0.35 + 0.1 * math.sin(now * 1.5)
+            fl = _hsv(hue, 0.6, 0.5 + 0.3 * breathe)
+            fr = _hsv(hue, 0.6, 0.5 + 0.3 * breathe)
+            ml = _hsv((hue + 0.05) % 1.0, 0.55, 0.4 + 0.2 * breathe)
+            mr = _hsv((hue + 0.05) % 1.0, 0.55, 0.4 + 0.2 * breathe)
+            rl = _hsv((hue + 0.1) % 1.0, 0.5, 0.3 + 0.2 * breathe)
+            rr = _hsv((hue + 0.1) % 1.0, 0.5, 0.3 + 0.2 * breathe)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "gap_fill_satisfaction":
+            hue = 0.25 + 0.08 * math.sin(now * 3.0)
+            wave = 0.5 + 0.5 * math.sin(now * 2.5)
+            fl = _hsv(hue, 0.7, 0.5 + 0.3 * wave)
+            fr = _hsv(hue, 0.7, 0.5 + 0.3 * wave)
+            ml = _hsv((hue + 0.08) % 1.0, 0.65, 0.4 + 0.2 * wave)
+            mr = _hsv((hue + 0.08) % 1.0, 0.65, 0.4 + 0.2 * wave)
+            rl = _hsv((hue + 0.16) % 1.0, 0.6, 0.3 + 0.2 * wave)
+            rr = _hsv((hue + 0.16) % 1.0, 0.6, 0.3 + 0.2 * wave)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "corner_escape_relief":
+            hue = 0.55 + 0.1 * math.sin(now * 3.0)
+            sigh = 0.5 + 0.5 * math.sin(now * 2.0)
+            fl = _hsv(hue, 0.6, 0.4 + 0.3 * sigh)
+            fr = _hsv(hue, 0.6, 0.4 + 0.3 * sigh)
+            ml = _hsv((hue + 0.05) % 1.0, 0.55, 0.3 + 0.2 * sigh)
+            mr = _hsv((hue + 0.05) % 1.0, 0.55, 0.3 + 0.2 * sigh)
+            rl = _hsv((hue + 0.1) % 1.0, 0.5, 0.2 + 0.2 * sigh)
+            rr = _hsv((hue + 0.1) % 1.0, 0.5, 0.2 + 0.2 * sigh)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "corridor_cruise":
+            hue = 0.55 + 0.05 * math.sin(now * 4.0)
+            wave = 0.5 + 0.5 * math.sin(now * 3.0)
+            fl = _hsv(hue, 0.7, 0.5 + 0.3 * wave)
+            fr = _hsv(hue, 0.7, 0.5 + 0.3 * wave)
+            ml = _hsv((hue + 0.08) % 1.0, 0.65, 0.4 + 0.25 * wave)
+            mr = _hsv((hue + 0.08) % 1.0, 0.65, 0.4 + 0.25 * wave)
+            rl = _hsv((hue + 0.16) % 1.0, 0.6, 0.3 + 0.2 * wave)
+            rr = _hsv((hue + 0.16) % 1.0, 0.6, 0.3 + 0.2 * wave)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "boundary_relief":
+            hue = 0.35 + 0.08 * math.sin(now * 2.5)
+            breathe = 0.5 + 0.5 * math.sin(now * 2.0)
+            fl = _hsv(hue, 0.5, 0.4 + 0.3 * breathe)
+            fr = _hsv(hue, 0.5, 0.4 + 0.3 * breathe)
+            ml = _hsv((hue + 0.05) % 1.0, 0.45, 0.3 + 0.2 * breathe)
+            mr = _hsv((hue + 0.05) % 1.0, 0.45, 0.3 + 0.2 * breathe)
+            rl = _hsv((hue + 0.1) % 1.0, 0.4, 0.2 + 0.15 * breathe)
+            rr = _hsv((hue + 0.1) % 1.0, 0.4, 0.2 + 0.15 * breathe)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "straight_cruise_joy":
+            hue = 0.12 + 0.04 * math.sin(now * 5.0)
+            surge = 0.5 + 0.5 * math.sin(now * 4.0)
+            fl = _hsv(hue, 0.75, 0.6 + 0.3 * surge)
+            fr = _hsv(hue, 0.75, 0.6 + 0.3 * surge)
+            ml = _hsv((hue + 0.06) % 1.0, 0.7, 0.5 + 0.25 * surge)
+            mr = _hsv((hue + 0.06) % 1.0, 0.7, 0.5 + 0.25 * surge)
+            rl = _hsv((hue + 0.12) % 1.0, 0.65, 0.4 + 0.2 * surge)
+            rr = _hsv((hue + 0.12) % 1.0, 0.65, 0.4 + 0.2 * surge)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "smart_recovery_triumph":
+            hue = (now * 2.0) % 1.0
+            spin = 0.5 + 0.5 * math.sin(now * 6.0)
+            fl = _hsv(hue, 0.8, 0.5 + 0.4 * spin)
+            fr = _hsv((hue + 0.17) % 1.0, 0.8, 0.5 + 0.4 * spin)
+            ml = _hsv((hue + 0.33) % 1.0, 0.75, 0.4 + 0.3 * spin)
+            mr = _hsv((hue + 0.5) % 1.0, 0.75, 0.4 + 0.3 * spin)
+            rl = _hsv((hue + 0.67) % 1.0, 0.7, 0.3 + 0.25 * spin)
+            rr = _hsv((hue + 0.83) % 1.0, 0.7, 0.3 + 0.25 * spin)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        if command.mode == "corner_escape":
+            amber = (255, 160, 0)
+            tbot.set_underlight(LIGHT_FRONT_LEFT, *amber, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT, *amber, show=False)
+            mid = (255, 120, 0)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT, *mid, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mid, show=False)
+            rear = (255, 80, 0)
+            tbot.set_underlight(LIGHT_REAR_LEFT, *rear, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT, *rear, show=False)
+            tbot.show_underlighting()
+            return
+
+        # Gen26: emotional drive lighting — expressive per-LED patterns during drive
+        if controller.config.emotional_drive_lighting and command.mode == "drive":
+            phase = controller.drive_lighting_phase
+            local_speed = controller.current_speed
+            local_front = controller.sanitize_distance(controller.last_scan.get(0, cfg.cruise_distance))
+            speed_ratio = min(1.0, local_speed / max(cfg.open_space_speed, 0.01))
+            breath_rate = cfg.drive_breathing_rate + speed_ratio * cfg.drive_breathing_rate
+            breathe = 0.5 + 0.5 * math.sin(now * breath_rate)
+
+            if controller.current_mood == "celebration":
+                hue = (now * cfg.mood_celebration_rainbow_speed) % 1.0
+                fl = _hsv(hue, 0.95, 0.6 + 0.4 * breathe)
+                fr = _hsv((hue + 0.17) % 1.0, 0.95, 0.6 + 0.4 * breathe)
+                ml = _hsv((hue + 0.33) % 1.0, 0.9, 0.5 + 0.3 * breathe)
+                mr = _hsv((hue + 0.5) % 1.0, 0.9, 0.5 + 0.3 * breathe)
+                rl = _hsv((hue + 0.67) % 1.0, 0.85, 0.4 + 0.2 * breathe)
+                rr = _hsv((hue + 0.83) % 1.0, 0.85, 0.4 + 0.2 * breathe)
+            elif controller.gratitude_level > 0.5:
+                hue = 0.12 + 0.05 * math.sin(now * 1.5)
+                glow = 0.5 + 0.5 * math.sin(now * 2.0)
+                fl = _hsv(hue, 0.8, 0.5 + 0.4 * glow)
+                fr = _hsv(hue, 0.8, 0.5 + 0.4 * glow)
+                ml = _hsv((hue + 0.03) % 1.0, 0.7, 0.4 + 0.3 * glow)
+                mr = _hsv((hue + 0.03) % 1.0, 0.7, 0.4 + 0.3 * glow)
+                rl = _hsv((hue + 0.06) % 1.0, 0.6, 0.3 + 0.2 * glow)
+                rr = _hsv((hue + 0.06) % 1.0, 0.6, 0.3 + 0.2 * glow)
+            elif controller.wonder_level > 0.5:
+                hue = 0.55 + 0.2 * math.sin(now * 1.0)
+                gaze = 0.5 + 0.5 * math.sin(now * 0.8)
+                fl = _hsv(hue, 0.6, 0.3 + 0.4 * gaze)
+                fr = _hsv(hue, 0.6, 0.3 + 0.4 * gaze)
+                ml = _hsv((hue + 0.1) % 1.0, 0.5, 0.2 + 0.3 * gaze)
+                mr = _hsv((hue + 0.1) % 1.0, 0.5, 0.2 + 0.3 * gaze)
+                rl = _hsv((hue + 0.2) % 1.0, 0.4, 0.15 + 0.2 * gaze)
+                rr = _hsv((hue + 0.2) % 1.0, 0.4, 0.15 + 0.2 * gaze)
+            elif controller.flow_dance_level > 0.5:
+                hue = (now * 2.5) % 1.0
+                dance = 0.5 + 0.5 * math.sin(now * 6.0)
+                fl = _hsv(hue, 0.9, 0.6 + 0.4 * dance)
+                fr = _hsv((hue + 0.12) % 1.0, 0.9, 0.6 + 0.4 * dance)
+                ml = _hsv((hue + 0.24) % 1.0, 0.85, 0.5 + 0.3 * dance)
+                mr = _hsv((hue + 0.36) % 1.0, 0.85, 0.5 + 0.3 * dance)
+                rl = _hsv((hue + 0.48) % 1.0, 0.8, 0.4 + 0.2 * dance)
+                rr = _hsv((hue + 0.6) % 1.0, 0.8, 0.4 + 0.2 * dance)
+            elif controller.relief_level > 0.5:
+                hue = 0.35 + 0.08 * math.sin(now * 1.5)
+                sigh = 0.5 + 0.5 * math.sin(now * 1.2)
+                fl = _hsv(hue, 0.5, 0.4 + 0.3 * sigh)
+                fr = _hsv(hue, 0.5, 0.4 + 0.3 * sigh)
+                ml = _hsv((hue + 0.05) % 1.0, 0.4, 0.3 + 0.2 * sigh)
+                mr = _hsv((hue + 0.05) % 1.0, 0.4, 0.3 + 0.2 * sigh)
+                rl = _hsv((hue + 0.1) % 1.0, 0.3, 0.2 + 0.15 * sigh)
+                rr = _hsv((hue + 0.1) % 1.0, 0.3, 0.2 + 0.15 * sigh)
+            elif controller.playfulness_level > 0.7:
+                hue = (now * 1.5) % 1.0
+                play = 0.5 + 0.5 * math.sin(now * 4.0)
+                fl = _hsv(hue, 0.85, 0.5 + 0.4 * play)
+                fr = _hsv((hue + 0.2) % 1.0, 0.85, 0.5 + 0.4 * play)
+                ml = _hsv((hue + 0.4) % 1.0, 0.75, 0.4 + 0.3 * play)
+                mr = _hsv((hue + 0.6) % 1.0, 0.75, 0.4 + 0.3 * play)
+                rl = _hsv((hue + 0.8) % 1.0, 0.65, 0.3 + 0.2 * play)
+                rr = _hsv(hue, 0.65, 0.3 + 0.2 * play)
+            elif controller.satisfaction_level > 0.6:
+                hue = 0.1 + 0.05 * math.sin(now * 1.0)
+                purr = 0.5 + 0.5 * math.sin(now * 2.0)
+                fl = _hsv(hue, 0.7, 0.5 + 0.3 * purr)
+                fr = _hsv(hue, 0.7, 0.5 + 0.3 * purr)
+                ml = _hsv((hue + 0.03) % 1.0, 0.6, 0.4 + 0.2 * purr)
+                mr = _hsv((hue + 0.03) % 1.0, 0.6, 0.4 + 0.2 * purr)
+                rl = _hsv((hue + 0.06) % 1.0, 0.5, 0.3 + 0.15 * purr)
+                rr = _hsv((hue + 0.06) % 1.0, 0.5, 0.3 + 0.15 * purr)
+            elif controller.current_mood == "confident":
+                hue = 0.78 + 0.03 * math.sin(now * 1.5)
+                glow = 0.5 + 0.5 * math.sin(now * cfg.drive_breathing_rate)
+                fl = _hsv(hue, 0.8, 0.5 + 0.4 * glow)
+                fr = _hsv(hue, 0.8, 0.5 + 0.4 * glow)
+                ml = _hsv((hue + 0.05) % 1.0, 0.7, 0.4 + 0.3 * glow)
+                mr = _hsv((hue + 0.05) % 1.0, 0.7, 0.4 + 0.3 * glow)
+                rl = _hsv((hue + 0.1) % 1.0, 0.6, 0.3 + 0.2 * glow)
+                rr = _hsv((hue + 0.1) % 1.0, 0.6, 0.3 + 0.2 * glow)
+            elif controller.current_mood == "exploring":
+                hue = (now * cfg.mood_exploring_hue_speed) % 1.0
+                wave = 0.5 + 0.5 * math.sin(now * 2.0)
+                fl = _hsv(hue, 0.7, 0.4 + 0.3 * wave)
+                fr = _hsv((hue + 0.08) % 1.0, 0.7, 0.4 + 0.3 * wave)
+                ml = _hsv((hue + 0.16) % 1.0, 0.6, 0.3 + 0.2 * wave)
+                mr = _hsv((hue + 0.24) % 1.0, 0.6, 0.3 + 0.2 * wave)
+                rl = _hsv((hue + 0.32) % 1.0, 0.5, 0.2 + 0.15 * wave)
+                rr = _hsv((hue + 0.4) % 1.0, 0.5, 0.2 + 0.15 * wave)
+            elif controller.current_mood == "stressed":
+                flicker = 0.5 + 0.5 * math.sin(now * cfg.mood_stressed_flicker_rate)
+                fl = _hsv(0.02, 0.9, 0.3 + 0.4 * flicker)
+                fr = _hsv(0.02, 0.9, 0.3 + 0.4 * flicker)
+                ml = _hsv(0.03, 0.8, 0.2 + 0.2 * flicker)
+                mr = _hsv(0.03, 0.8, 0.2 + 0.2 * flicker)
+                rl = _hsv(0.04, 0.7, 0.15 + 0.15 * flicker)
+                rr = _hsv(0.04, 0.7, 0.15 + 0.15 * flicker)
             else:
-                extra = min(1.0, (local_front - cfg.cruise_distance) / 60.0)
-                hue = 0.35 + 0.15 * extra
-                fl = _hsv(hue, 0.75, 0.4 + 0.4 * breathe)
-                fr = _hsv((hue + 0.04) % 1.0, 0.75, 0.4 + 0.4 * breathe)
-                ml = _hsv((hue + 0.08) % 1.0, 0.65, 0.3 + 0.3 * breathe)
-                mr = _hsv((hue + 0.12) % 1.0, 0.65, 0.3 + 0.3 * breathe)
-                rl = _hsv((hue + 0.16) % 1.0, 0.55, 0.2 + 0.2 * breathe)
-                rr = _hsv((hue + 0.2) % 1.0, 0.55, 0.2 + 0.2 * breathe)
+                # Default: distance-based with subtle breathing
+                if local_front <= cfg.danger_distance:
+                    pulse = 0.5 + 0.5 * math.sin(now * 6.0)
+                    fl = _hsv(0.02, 0.9, 0.4 + 0.4 * pulse)
+                    fr = _hsv(0.02, 0.9, 0.4 + 0.4 * pulse)
+                    ml = _hsv(0.03, 0.8, 0.2 + 0.2 * pulse)
+                    mr = _hsv(0.03, 0.8, 0.2 + 0.2 * pulse)
+                    rl = _hsv(0.04, 0.7, 0.15 + 0.15 * pulse)
+                    rr = _hsv(0.04, 0.7, 0.15 + 0.15 * pulse)
+                elif local_front <= cfg.caution_distance:
+                    t = (local_front - cfg.danger_distance) / max(cfg.caution_distance - cfg.danger_distance, 1.0)
+                    hue = 0.08 + 0.05 * t
+                    fl = _hsv(hue, 0.85, 0.4 + 0.3 * breathe)
+                    fr = _hsv(hue, 0.85, 0.4 + 0.3 * breathe)
+                    ml = _hsv((hue + 0.03) % 1.0, 0.7, 0.3 + 0.2 * breathe)
+                    mr = _hsv((hue + 0.03) % 1.0, 0.7, 0.3 + 0.2 * breathe)
+                    rl = _hsv((hue + 0.06) % 1.0, 0.6, 0.2 + 0.15 * breathe)
+                    rr = _hsv((hue + 0.06) % 1.0, 0.6, 0.2 + 0.15 * breathe)
+                elif local_front <= cfg.cruise_distance:
+                    t = (local_front - cfg.caution_distance) / max(cfg.cruise_distance - cfg.caution_distance, 1.0)
+                    hue = 0.15 + 0.15 * t
+                    fl = _hsv(hue, 0.8, 0.4 + 0.3 * breathe)
+                    fr = _hsv(hue, 0.8, 0.4 + 0.3 * breathe)
+                    ml = _hsv((hue + 0.05) % 1.0, 0.7, 0.3 + 0.2 * breathe)
+                    mr = _hsv((hue + 0.05) % 1.0, 0.7, 0.3 + 0.2 * breathe)
+                    rl = _hsv((hue + 0.1) % 1.0, 0.6, 0.2 + 0.15 * breathe)
+                    rr = _hsv((hue + 0.1) % 1.0, 0.6, 0.2 + 0.15 * breathe)
+                else:
+                    extra = min(1.0, (local_front - cfg.cruise_distance) / 60.0)
+                    hue = 0.35 + 0.15 * extra
+                    fl = _hsv(hue, 0.75, 0.4 + 0.4 * breathe)
+                    fr = _hsv((hue + 0.04) % 1.0, 0.75, 0.4 + 0.4 * breathe)
+                    ml = _hsv((hue + 0.08) % 1.0, 0.65, 0.3 + 0.3 * breathe)
+                    mr = _hsv((hue + 0.12) % 1.0, 0.65, 0.3 + 0.3 * breathe)
+                    rl = _hsv((hue + 0.16) % 1.0, 0.55, 0.2 + 0.2 * breathe)
+                    rr = _hsv((hue + 0.2) % 1.0, 0.55, 0.2 + 0.2 * breathe)
 
-        controller.drive_lighting_phase = (phase + 0.01) % 1.0
-        tbot.set_underlight(LIGHT_FRONT_LEFT,   *fl, show=False)
-        tbot.set_underlight(LIGHT_FRONT_RIGHT,  *fr, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_LEFT,  *ml, show=False)
-        tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
-        tbot.set_underlight(LIGHT_REAR_LEFT,    *rl, show=False)
-        tbot.set_underlight(LIGHT_REAR_RIGHT,   *rr, show=False)
+            controller.drive_lighting_phase = (phase + 0.01) % 1.0
+            tbot.set_underlight(LIGHT_FRONT_LEFT,   *fl, show=False)
+            tbot.set_underlight(LIGHT_FRONT_RIGHT,  *fr, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_LEFT,  *ml, show=False)
+            tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *mr, show=False)
+            tbot.set_underlight(LIGHT_REAR_LEFT,    *rl, show=False)
+            tbot.set_underlight(LIGHT_REAR_RIGHT,   *rr, show=False)
+            tbot.show_underlighting()
+            return
+
+        # --- drive mode ---
+        front_dist = controller.sanitize_distance(controller.last_scan.get(0, cfg.cruise_distance))
+        speed = controller.current_speed
+        speed_ratio = min(1.0, speed / max(cfg.open_space_speed, 0.01))
+        max_angle = max(abs(a) for a in cfg.scan_angles) or 1
+        steer = command.heading / max_angle  # −1=full left … +1=full right
+
+        # Front LEDs: distance emotion — red danger → amber caution → green clear → bright teal open
+        if front_dist <= 0.0 or front_dist <= cfg.danger_distance:
+            front = (255, 0, 0)
+        elif front_dist <= cfg.caution_distance:
+            t = (front_dist - cfg.danger_distance) / max(cfg.caution_distance - cfg.danger_distance, 1.0)
+            front = (255, int(110 * t), 0)
+        elif front_dist <= cfg.cruise_distance:
+            t = (front_dist - cfg.caution_distance) / max(cfg.cruise_distance - cfg.caution_distance, 1.0)
+            front = (int(255 * (1.0 - t)), 255, 0)
+        else:
+            extra = min(1.0, (front_dist - cfg.cruise_distance) / 40.0)
+            front = (0, 255, int(180 * extra))
+
+        # Middle LEDs: steering emotion — orange=turning left, blue=turning right, green=straight
+        left_turn  = max(0.0, -steer)
+        right_turn = max(0.0,  steer)
+        mid_l = _hsv(
+            0.08 * left_turn + 0.33 * (1.0 - left_turn),   # orange → green
+            0.9,
+            0.2 + 0.55 * speed_ratio + 0.25 * left_turn,
+        )
+        mid_r = _hsv(
+            0.60 * right_turn + 0.33 * (1.0 - right_turn), # blue → green
+            0.9,
+            0.2 + 0.55 * speed_ratio + 0.25 * right_turn,
+        )
+
+        # Rear LEDs: speed/energy — teal thruster glow, breathing pulse with speed
+        pulse = 0.5 + 0.5 * math.sin(now * (2.5 + speed_ratio * 5.0))
+        rear_v = 0.05 + 0.55 * speed_ratio + 0.25 * pulse * speed_ratio
+        rear = _hsv(0.50 + 0.06 * speed_ratio, 0.95, rear_v)
+
+        # Gen18: Mood-based hue overlay
+        def _clamp_rgb(r, g, b):
+            return (max(0, min(255, int(round(r)))),
+                    max(0, min(255, int(round(g)))),
+                    max(0, min(255, int(round(b)))))
+
+        mood_hue = controller.get_mood_hue_offset(now)
+        mood_influence = controller.config.mood_personality_color_influence
+        if controller.current_mood == "celebration":
+            front_r, front_g, front_b = front
+            celeb_h = mood_hue
+            celeb_rgb = hsv_to_rgb(celeb_h, 0.8, 0.7 + 0.3 * pulse)
+            # Clamp intermediate values to prevent overflow
+            r_val = max(0.0, min(255.0, front_r * (1.0 - mood_influence) + max(0.0, min(1.0, celeb_rgb[0])) * 255 * mood_influence))
+            g_val = max(0.0, min(255.0, front_g * (1.0 - mood_influence) + max(0.0, min(1.0, celeb_rgb[1])) * 255 * mood_influence))
+            b_val = max(0.0, min(255.0, front_b * (1.0 - mood_influence) + max(0.0, min(1.0, celeb_rgb[2])) * 255 * mood_influence))
+            front = _clamp_rgb(r_val, g_val, b_val)
+        elif controller.current_mood == "stressed":
+            front_r, front_g, front_b = front
+            stress_wash = controller.config.mood_stress_wash_intensity
+            front = _clamp_rgb(
+                front_r + (255 - front_r) * stress_wash,
+                front_g * (1.0 - stress_wash),
+                front_b * (1.0 - stress_wash),
+            )
+        elif controller.current_mood == "exploring":
+            explore_h = mood_hue
+            explore_rgb = hsv_to_rgb(explore_h, 0.6, 0.3)
+            front_r, front_g, front_b = front
+            # Clamp intermediate values to prevent overflow
+            r_val = max(0.0, min(255.0, front_r * (1.0 - mood_influence) + max(0.0, min(1.0, explore_rgb[0])) * 255 * mood_influence))
+            g_val = max(0.0, min(255.0, front_g * (1.0 - mood_influence) + max(0.0, min(1.0, explore_rgb[1])) * 255 * mood_influence))
+            b_val = max(0.0, min(255.0, front_b * (1.0 - mood_influence) + max(0.0, min(1.0, explore_rgb[2])) * 255 * mood_influence))
+            front = _clamp_rgb(r_val, g_val, b_val)
+
+        # Gen20: Per-LED emotional expressions with rainbow wave effects
+        blend = controller.config.mood_led_gradient_blend
+        wave_rate = controller.config.mood_led_wave_rate
+        wave_phase = now * wave_rate
+
+        # Celebration: rainbow wave across all LEDs
+        if controller.current_mood == "celebration":
+            rainbow_speed = controller.config.mood_celebration_rainbow_speed
+            fl_h = (wave_phase * 0.3) % 1.0
+            fr_h = (wave_phase * 0.3 + 0.17) % 1.0
+            ml_h = (wave_phase * 0.3 + 0.33) % 1.0
+            mr_h = (wave_phase * 0.3 + 0.5) % 1.0
+            rl_h = (wave_phase * 0.3 + 0.67) % 1.0
+            rr_h = (wave_phase * 0.3 + 0.83) % 1.0
+            celeb_v = 0.6 + 0.4 * math.sin(now * 4)
+            front = _hsv(fl_h, 0.9, celeb_v)
+            mid_l = _hsv(ml_h, 0.85, celeb_v * 0.9)
+            mid_r = _hsv(mr_h, 0.85, celeb_v * 0.9)
+            rear = _hsv(rl_h, 0.8, celeb_v * 0.7)
+
+        # Confident: purple glow pulse
+        elif controller.current_mood == "confident":
+            glow_rate = controller.config.mood_confident_glow_rate
+            glow = 0.5 + 0.5 * math.sin(now * glow_rate)
+            purple_base = 0.78
+            front_r, front_g, front_b = front
+            purple = _hsv(purple_base, 0.8, 0.4 + 0.4 * glow)
+            front = (
+                max(0, min(255, int(round(front_r * (1.0 - blend) + purple[0] * blend)))),
+                max(0, min(255, int(round(front_g * (1.0 - blend) + purple[1] * blend)))),
+                max(0, min(255, int(round(front_b * (1.0 - blend) + purple[2] * blend)))),
+            )
+            mid_l = _hsv(purple_base + 0.03, 0.7, 0.3 + 0.3 * glow)
+            mid_r = _hsv(purple_base - 0.03, 0.7, 0.3 + 0.3 * glow)
+            rear = _hsv(purple_base, 0.6, 0.2 + 0.2 * glow)
+
+        # Exploring: hue rotation wave
+        elif controller.current_mood == "exploring":
+            hue_speed = controller.config.mood_exploring_hue_speed
+            explore_hue = (now * hue_speed) % 1.0
+            explore_rgb_wave = hsv_to_rgb(explore_hue, 0.7, 0.4)
+            front_r, front_g, front_b = front
+            front = (
+                max(0, min(255, int(round(front_r * (1.0 - blend) + explore_rgb_wave[0] * 255 * blend)))),
+                max(0, min(255, int(round(front_g * (1.0 - blend) + explore_rgb_wave[1] * 255 * blend)))),
+                max(0, min(255, int(round(front_b * (1.0 - blend) + explore_rgb_wave[2] * 255 * blend)))),
+            )
+            mid_l = _hsv((explore_hue + 0.15) % 1.0, 0.6, 0.3)
+            mid_r = _hsv((explore_hue + 0.3) % 1.0, 0.6, 0.3)
+            rear = _hsv((explore_hue + 0.45) % 1.0, 0.5, 0.2)
+
+        # Stressed: red flicker
+        elif controller.current_mood == "stressed":
+            flicker_rate = controller.config.mood_stressed_flicker_rate
+            flicker = 0.5 + 0.5 * math.sin(now * flicker_rate + math.sin(now * 17) * 3)
+            front_r, front_g, front_b = front
+            stress_pulse = int(flicker * 80)
+            front = (min(255, front_r + stress_pulse), max(0, front_g - stress_pulse // 2), 0)
+            mid_l = (int(120 + 60 * flicker), int(20 * (1.0 - flicker)), 0)
+            mid_r = (int(120 + 60 * flicker), int(20 * (1.0 - flicker)), 0)
+            rear = (int(80 + 40 * flicker), int(10 * (1.0 - flicker)), 0)
+
+        # Stressed overlay: wash everything toward red as stress rises
+        def _stress(color):
+            r, g, b = color
+            s = max(0.0, min(1.0, controller.stress))
+            r = max(0, min(255, r + int(s * 120)))
+            g = max(0, min(255, int(g * (1.0 - s * 0.5))))
+            b = max(0, min(255, int(b * (1.0 - s * 0.6))))
+            return r, g, b
+
+        tbot.set_underlight(LIGHT_FRONT_LEFT,   *_stress(front), show=False)
+        tbot.set_underlight(LIGHT_FRONT_RIGHT,  *_stress(front), show=False)
+        tbot.set_underlight(LIGHT_MIDDLE_LEFT,  *_stress(mid_l), show=False)
+        tbot.set_underlight(LIGHT_MIDDLE_RIGHT,  *_stress(mid_r), show=False)
+        tbot.set_underlight(LIGHT_REAR_LEFT,    *_stress(rear),  show=False)
+        tbot.set_underlight(LIGHT_REAR_RIGHT,   *_stress(rear),  show=False)
         tbot.show_underlighting()
-        return
 
-    # --- drive mode ---
-    front_dist = controller.sanitize_distance(controller.last_scan.get(0, cfg.cruise_distance))
-    speed = controller.current_speed
-    speed_ratio = min(1.0, speed / max(cfg.open_space_speed, 0.01))
-    max_angle = max(abs(a) for a in cfg.scan_angles) or 1
-    steer = command.heading / max_angle  # −1=full left … +1=full right
-
-    # Front LEDs: distance emotion — red danger → amber caution → green clear → bright teal open
-    if front_dist <= 0.0 or front_dist <= cfg.danger_distance:
-        front = (255, 0, 0)
-    elif front_dist <= cfg.caution_distance:
-        t = (front_dist - cfg.danger_distance) / max(cfg.caution_distance - cfg.danger_distance, 1.0)
-        front = (255, int(110 * t), 0)
-    elif front_dist <= cfg.cruise_distance:
-        t = (front_dist - cfg.caution_distance) / max(cfg.cruise_distance - cfg.caution_distance, 1.0)
-        front = (int(255 * (1.0 - t)), 255, 0)
-    else:
-        extra = min(1.0, (front_dist - cfg.cruise_distance) / 40.0)
-        front = (0, 255, int(180 * extra))
-
-    # Middle LEDs: steering emotion — orange=turning left, blue=turning right, green=straight
-    left_turn  = max(0.0, -steer)
-    right_turn = max(0.0,  steer)
-    mid_l = _hsv(
-        0.08 * left_turn + 0.33 * (1.0 - left_turn),   # orange → green
-        0.9,
-        0.2 + 0.55 * speed_ratio + 0.25 * left_turn,
-    )
-    mid_r = _hsv(
-        0.60 * right_turn + 0.33 * (1.0 - right_turn), # blue → green
-        0.9,
-        0.2 + 0.55 * speed_ratio + 0.25 * right_turn,
-    )
-
-    # Rear LEDs: speed/energy — teal thruster glow, breathing pulse with speed
-    pulse = 0.5 + 0.5 * math.sin(now * (2.5 + speed_ratio * 5.0))
-    rear_v = 0.05 + 0.55 * speed_ratio + 0.25 * pulse * speed_ratio
-    rear = _hsv(0.50 + 0.06 * speed_ratio, 0.95, rear_v)
-
-    # Gen18: Mood-based hue overlay
-    mood_hue = controller.get_mood_hue_offset(now)
-    mood_influence = controller.config.mood_personality_color_influence
-    if controller.current_mood == "celebration":
-        front_r, front_g, front_b = front
-        celeb_h = mood_hue
-        celeb_rgb = hsv_to_rgb(celeb_h, 0.8, 0.7 + 0.3 * pulse)
-        front = (
-            min(255, int(front_r * (1.0 - mood_influence) + celeb_rgb[0] * 255 * mood_influence)),
-            min(255, int(front_g * (1.0 - mood_influence) + celeb_rgb[1] * 255 * mood_influence)),
-            min(255, int(front_b * (1.0 - mood_influence) + celeb_rgb[2] * 255 * mood_influence)),
-        )
-    elif controller.current_mood == "stressed":
-        front_r, front_g, front_b = front
-        stress_wash = controller.config.mood_stress_wash_intensity
-        front = (
-            min(255, int(front_r + (255 - front_r) * stress_wash)),
-            int(front_g * (1.0 - stress_wash)),
-            int(front_b * (1.0 - stress_wash)),
-        )
-    elif controller.current_mood == "exploring":
-        explore_h = mood_hue
-        explore_rgb = hsv_to_rgb(explore_h, 0.6, 0.3)
-        front_r, front_g, front_b = front
-        front = (
-            min(255, int(front_r * (1.0 - mood_influence) + explore_rgb[0] * 255 * mood_influence)),
-            min(255, int(front_g * (1.0 - mood_influence) + explore_rgb[1] * 255 * mood_influence)),
-            min(255, int(front_b * (1.0 - mood_influence) + explore_rgb[2] * 255 * mood_influence)),
-        )
-
-    # Gen20: Per-LED emotional expressions with rainbow wave effects
-    blend = controller.config.mood_led_gradient_blend
-    wave_rate = controller.config.mood_led_wave_rate
-    wave_phase = now * wave_rate
-
-    # Celebration: rainbow wave across all LEDs
-    if controller.current_mood == "celebration":
-        rainbow_speed = controller.config.mood_celebration_rainbow_speed
-        fl_h = (wave_phase * 0.3) % 1.0
-        fr_h = (wave_phase * 0.3 + 0.17) % 1.0
-        ml_h = (wave_phase * 0.3 + 0.33) % 1.0
-        mr_h = (wave_phase * 0.3 + 0.5) % 1.0
-        rl_h = (wave_phase * 0.3 + 0.67) % 1.0
-        rr_h = (wave_phase * 0.3 + 0.83) % 1.0
-        celeb_v = 0.6 + 0.4 * math.sin(now * 4)
-        front = _hsv(fl_h, 0.9, celeb_v)
-        mid_l = _hsv(ml_h, 0.85, celeb_v * 0.9)
-        mid_r = _hsv(mr_h, 0.85, celeb_v * 0.9)
-        rear = _hsv(rl_h, 0.8, celeb_v * 0.7)
-
-    # Confident: purple glow pulse
-    elif controller.current_mood == "confident":
-        glow_rate = controller.config.mood_confident_glow_rate
-        glow = 0.5 + 0.5 * math.sin(now * glow_rate)
-        purple_base = 0.78
-        front_r, front_g, front_b = front
-        purple = _hsv(purple_base, 0.8, 0.4 + 0.4 * glow)
-        front = (
-            min(255, int(front_r * (1.0 - blend) + purple[0] * blend)),
-            min(255, int(front_g * (1.0 - blend) + purple[1] * blend)),
-            min(255, int(front_b * (1.0 - blend) + purple[2] * blend)),
-        )
-        mid_l = _hsv(purple_base + 0.03, 0.7, 0.3 + 0.3 * glow)
-        mid_r = _hsv(purple_base - 0.03, 0.7, 0.3 + 0.3 * glow)
-        rear = _hsv(purple_base, 0.6, 0.2 + 0.2 * glow)
-
-    # Exploring: hue rotation wave
-    elif controller.current_mood == "exploring":
-        hue_speed = controller.config.mood_exploring_hue_speed
-        explore_hue = (now * hue_speed) % 1.0
-        explore_rgb_wave = hsv_to_rgb(explore_hue, 0.7, 0.4)
-        front_r, front_g, front_b = front
-        front = (
-            min(255, int(front_r * (1.0 - blend) + explore_rgb_wave[0] * blend)),
-            min(255, int(front_g * (1.0 - blend) + explore_rgb_wave[1] * blend)),
-            min(255, int(front_b * (1.0 - blend) + explore_rgb_wave[2] * blend)),
-        )
-        mid_l = _hsv((explore_hue + 0.15) % 1.0, 0.6, 0.3)
-        mid_r = _hsv((explore_hue + 0.3) % 1.0, 0.6, 0.3)
-        rear = _hsv((explore_hue + 0.45) % 1.0, 0.5, 0.2)
-
-    # Stressed: red flicker
-    elif controller.current_mood == "stressed":
-        flicker_rate = controller.config.mood_stressed_flicker_rate
-        flicker = 0.5 + 0.5 * math.sin(now * flicker_rate + math.sin(now * 17) * 3)
-        front_r, front_g, front_b = front
-        stress_pulse = int(flicker * 80)
-        front = (min(255, front_r + stress_pulse), max(0, front_g - stress_pulse // 2), 0)
-        mid_l = (int(120 + 60 * flicker), int(20 * (1.0 - flicker)), 0)
-        mid_r = (int(120 + 60 * flicker), int(20 * (1.0 - flicker)), 0)
-        rear = (int(80 + 40 * flicker), int(10 * (1.0 - flicker)), 0)
-
-    # Stressed overlay: wash everything toward red as stress rises
-    def _stress(color):
-        r, g, b = color
-        s = controller.stress
-        r = min(255, r + int(s * 120))
-        g = int(g * (1.0 - s * 0.5))
-        b = int(b * (1.0 - s * 0.6))
-        return r, g, b
-
-    tbot.set_underlight(LIGHT_FRONT_LEFT,   *_stress(front), show=False)
-    tbot.set_underlight(LIGHT_FRONT_RIGHT,  *_stress(front), show=False)
-    tbot.set_underlight(LIGHT_MIDDLE_LEFT,  *_stress(mid_l), show=False)
-    tbot.set_underlight(LIGHT_MIDDLE_RIGHT, *_stress(mid_r), show=False)
-    tbot.set_underlight(LIGHT_REAR_LEFT,    *_stress(rear),  show=False)
-    tbot.set_underlight(LIGHT_REAR_RIGHT,   *_stress(rear),  show=False)
-    tbot.show_underlighting()
+    except Exception:
+        try:
+            tbot.fill_underlighting(64, 64, 64)
+        except Exception:
+            pass
 
 
 def apply_command(tbot, controller: AutonomousCarController, command: MotionCommand, now: float | None = None):
@@ -8755,7 +9554,11 @@ def apply_command(tbot, controller: AutonomousCarController, command: MotionComm
                         "joyful_spin", "curious_weave", "excited_dash", "peaceful_glide",
                         "mischievous_zigzag", "proud_parade", "wonder_gaze", "energetic_hop",
                         "flow_dance", "gratitude", "relief", "wonder", "playful_dart",
-                        "victory_bow", "contented_sway", "triumphant_burst"):
+                        "victory_bow", "contented_sway", "triumphant_burst",
+                        "straight_streak_celebration", "open_space_joy", "gap_fill_satisfaction",
+                        "corner_escape_relief",
+                        "corridor_cruise", "boundary_relief", "straight_cruise_joy",
+                        "smart_recovery_triumph"):
         tbot.set_motor_speeds(command.left_speed, command.right_speed)
         time.sleep(0.08)
         tbot.stop()
@@ -8919,7 +9722,11 @@ def main():
                         "joyful_spin", "curious_weave", "excited_dash", "peaceful_glide",
                         "mischievous_zigzag", "proud_parade", "wonder_gaze", "energetic_hop",
                         "flow_dance", "gratitude", "relief", "wonder", "playful_dart",
-                        "victory_bow", "contented_sway", "triumphant_burst"):
+                        "victory_bow", "contented_sway", "triumphant_burst",
+                        "straight_streak_celebration", "open_space_joy", "gap_fill_satisfaction",
+                        "corner_escape_relief",
+                        "corridor_cruise", "boundary_relief", "straight_cruise_joy",
+                        "smart_recovery_triumph"):
                     if on_inline_line:
                         print()
                         on_inline_line = False
@@ -8986,6 +9793,10 @@ def main():
                         "victory_bow": "VICTORY BOW",
                         "contented_sway": "CONTENTED SWAY",
                         "triumphant_burst": "TRIUMPHANT BURST",
+                        "corridor_cruise": "CORRIDOR CRUISE",
+                        "boundary_relief": "BOUNDARY RELIEF",
+                        "straight_cruise_joy": "STRAIGHT CRUISE JOY",
+                        "smart_recovery_triumph": "SMART RECOVERY TRIUMPH",
                     }
                     label = move_labels.get(command.mode, command.mode)
                     print(f"[{label}] front={front_distance:.0f}cm  mood={controller.current_mood}  | {emotion}")
