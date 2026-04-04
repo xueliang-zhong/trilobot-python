@@ -229,6 +229,34 @@ class DaddyCarV3Tests(unittest.TestCase):
         self.assertGreater(command.left_speed, 0.0)
         self.assertGreater(command.right_speed, 0.0)
 
+    def test_plan_triggers_playful_charge_more_easily_for_close_playful_approach(self):
+        module = load_daddy_car_v3_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+        controller.last_scan = {-80: 80.0, -45: 52.0, 0: 38.0, 45: 54.0, 80: 78.0}
+        controller.last_scan_time = 6.0
+        controller.track_approach_rate(46.0, 6.0)
+        controller.track_approach_rate(41.0, 6.4)
+        controller.track_approach_rate(38.0, 6.8)
+        controller.last_scan[0] = 38.0
+
+        command = controller.plan(front_distance=38.0, now=6.9)
+
+        self.assertEqual(command.mode, "playful_charge")
+
+    def test_plan_avoids_playful_charge_when_sides_are_too_pinched(self):
+        module = load_daddy_car_v3_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+        controller.last_scan = {-80: 42.0, -45: 18.0, 0: 24.0, 45: 17.0, 80: 41.0}
+        controller.last_scan_time = 8.0
+        controller.track_approach_rate(42.0, 8.0)
+        controller.track_approach_rate(30.0, 8.3)
+        controller.track_approach_rate(24.0, 8.6)
+        controller.last_scan[0] = 24.0
+
+        command = controller.plan(front_distance=24.0, now=8.7)
+
+        self.assertNotEqual(command.mode, "playful_charge")
+
     def test_describe_lights_for_playful_charge_uses_white_charge_theme(self):
         module = load_daddy_car_v3_module()
         controller = module.AutonomousCarController(module.AutonomousCarConfig())

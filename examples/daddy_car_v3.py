@@ -184,12 +184,12 @@ class AutonomousCarConfig:
     follow_max_speed: float = 0.55            # top speed when chasing
     follow_reverse_speed: float = 0.28        # speed when backing off
     follow_kp: float = 0.018                  # proportional gain (speed per cm of error)
-    playful_charge_distance: float = 26.0     # invite playful charge when something rushes into this band
+    playful_charge_distance: float = 40.0     # invite playful charge when something rushes into this band
     playful_charge_min_distance: float = 16.0 # keep playful charge out of true danger range
-    playful_charge_speed: float = 0.78        # short playful lunge speed
-    playful_charge_duration_s: float = 0.22   # keep playful charge brief
-    playful_charge_cooldown_s: float = 1.8    # avoid continuous charging loops
-    playful_charge_approach_rate: float = 12.0  # cm/s threshold that suggests someone is actively playing
+    playful_charge_speed: float = 0.86        # short playful lunge speed
+    playful_charge_duration_s: float = 0.28   # keep playful charge brief but visible
+    playful_charge_cooldown_s: float = 0.75   # engage more often during play
+    playful_charge_approach_rate: float = 6.0  # low threshold so playful approaches trigger readily
     playful_charge_wiggle_bias: float = 0.10  # slight left/right asymmetry to feel playful
     stress_escape_gain: float = 0.25          # stress added per escape / dead-end
     stress_push_gain: float = 0.10            # stress added per brave push
