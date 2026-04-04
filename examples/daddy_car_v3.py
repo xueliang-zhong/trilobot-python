@@ -111,6 +111,12 @@ class AutonomousCarConfig:
     stuck_window_s: float = 3.0
     stuck_escape_count: int = 4
     stuck_spin_s: float = 0.55
+    motion_stuck_speed_min: float = 0.28
+    motion_stuck_progress_epsilon_cm: float = 1.5
+    motion_stuck_release_progress_cm: float = 6.0
+    motion_stuck_hold_s: float = 1.2
+    motion_stuck_snapshot_gap_s: float = 1.2
+    visual_stuck_recovery_hold_s: float = 2.5
     open_space_distance: float = 70.0
     open_space_speed: float = 0.90
     speed_accel_rate: float = 0.10   # max speed increase per loop cycle
@@ -870,6 +876,11 @@ class AutonomousCarController:
     target_heading_time: float = field(default=-math.inf)
     current_speed: float = field(default=0.0)
     current_heading: int = field(default=0)
+    last_position_observation: Dict[int, float] = field(default_factory=dict)
+    last_position_observation_time: float = field(default=-math.inf)
+    visual_stuck_since: float = field(default=-math.inf)
+    visually_stuck_until: float = field(default=-math.inf)
+    last_visual_stuck_trigger_time: float = field(default=-math.inf)
     front_rate_history: Deque[Tuple[float, float]] = field(init=False)
     smoothed_heading: float = field(default=0.0)
     exploration_memory: Dict[int, float] = field(default_factory=dict)
@@ -1325,10 +1336,63 @@ class AutonomousCarController:
             self.frontier_map[i] = 1.0
 
     def is_stuck(self, now: float) -> bool:
+        if self.is_visually_stuck(now):
+            return True
         cutoff = now - self.config.stuck_window_s
         while self.stuck_escape_times and self.stuck_escape_times[0] < cutoff:
             self.stuck_escape_times.popleft()
         return len(self.stuck_escape_times) >= self.config.stuck_escape_count
+
+    def build_position_observation(self, front_distance: float) -> Dict[int, float]:
+        return {
+            -45: self.sanitize_distance(self.last_scan.get(-45, 0.0)),
+            0: self.sanitize_distance(front_distance),
+            45: self.sanitize_distance(self.last_scan.get(45, 0.0)),
+        }
+
+    def is_visually_stuck(self, now: float) -> bool:
+        return now <= self.visually_stuck_until
+
+    def update_position_awareness(self, front_distance: float, now: float) -> bool:
+        observation = self.build_position_observation(front_distance)
+        moving_attempt = abs(self.current_speed) >= self.config.motion_stuck_speed_min
+        triggered = False
+
+        if not moving_attempt or observation[0] <= 0.0:
+            self.last_position_observation = observation
+            self.last_position_observation_time = now
+            self.visual_stuck_since = -math.inf
+            if now > self.visually_stuck_until and observation[0] > 0.0:
+                self.visually_stuck_until = -math.inf
+            return False
+
+        if self.last_position_observation:
+            dt = now - self.last_position_observation_time
+            if 0.0 < dt <= self.config.motion_stuck_snapshot_gap_s:
+                deltas = [
+                    abs(observation[angle] - self.last_position_observation.get(angle, 0.0))
+                    for angle in (-45, 0, 45)
+                    if observation[angle] > 0.0 and self.last_position_observation.get(angle, 0.0) > 0.0
+                ]
+                progress = max(deltas) if deltas else 0.0
+                if progress <= self.config.motion_stuck_progress_epsilon_cm:
+                    if self.visual_stuck_since == -math.inf:
+                        self.visual_stuck_since = self.last_position_observation_time
+                    if (
+                        now - self.visual_stuck_since >= self.config.motion_stuck_hold_s
+                        and now - self.last_visual_stuck_trigger_time >= self.config.motion_stuck_hold_s
+                    ):
+                        self.visually_stuck_until = now + self.config.visual_stuck_recovery_hold_s
+                        self.last_visual_stuck_trigger_time = now
+                        self.record_notable_event("visual_stuck", now)
+                        triggered = True
+                elif progress >= self.config.motion_stuck_release_progress_cm:
+                    self.visual_stuck_since = -math.inf
+                    self.visually_stuck_until = -math.inf
+
+        self.last_position_observation = observation
+        self.last_position_observation_time = now
+        return triggered
 
     def sanitize_distance(self, distance: float) -> float:
         if not math.isfinite(distance) or distance <= 0.0:
@@ -3146,10 +3210,64 @@ class AutonomousCarController:
         self.recovery_stage = min(3, self.recovery_stage + 1)
         self.recovery_stage_time = now
 
+    def build_stuck_recovery_command(self, front_distance: float, now: float) -> MotionCommand | None:
+        if not self.should_escalate_recovery(now):
+            return None
+
+        self.advance_recovery_stage(now)
+        self.clear_pounce_commitment()
+        stage = self.recovery_stage
+        if stage == 1:
+            wf_active, wf_cmd = self.wall_following_escape(self.last_scan, now)
+            if wf_active and wf_cmd is not None:
+                self.stuck_escape_times.append(now)
+                self.add_stress(self.config.stress_escape_gain * 0.5)
+                return wf_cmd
+            left_s = self.config.recovery_wiggle_speed
+            right_s = -self.config.recovery_wiggle_speed
+            heading = -60 if sum(self.recent_turns) >= 0 else 60
+            self.note_turn(heading)
+            self.stuck_escape_times.append(now)
+            self.add_stress(self.config.stress_escape_gain * 0.5)
+            self.record_notable_event("wiggling", now)
+            return MotionCommand(
+                mode="escape",
+                left_speed=left_s,
+                right_speed=right_s,
+                heading=heading,
+                colour=self.motion_colour_for("escape", heading, 0.0, front_distance),
+            )
+        if stage == 2:
+            heading = self.select_smart_escape_heading(self.last_scan, now)
+            self.stuck_escape_times.append(now)
+            self.add_stress(self.config.stress_escape_gain)
+            self.record_notable_event("reverse_spin", now)
+            return MotionCommand(
+                mode="escape",
+                left_speed=-self.config.escape_reverse_speed * 1.2,
+                right_speed=-self.config.escape_reverse_speed * 1.2,
+                heading=heading,
+                colour=self.motion_colour_for("escape", heading, 0.0, front_distance),
+            )
+
+        heading = -80 if sum(self.recent_turns) >= 0 else 80
+        self.stuck_escape_times.append(now)
+        self.add_stress(self.config.stress_escape_gain * 1.5)
+        self.record_notable_event("full_spin", now)
+        return MotionCommand(
+            mode="escape",
+            left_speed=-self.config.escape_turn_speed,
+            right_speed=self.config.escape_turn_speed,
+            heading=heading,
+            colour=self.motion_colour_for("escape", heading, 0.0, front_distance),
+        )
+
     def reset_recovery(self):
         """Reset recovery state when navigation is successful."""
         self.recovery_stage = 0
         self.recovery_stage_time = -math.inf
+        self.visual_stuck_since = -math.inf
+        self.visually_stuck_until = -math.inf
 
     def record_notable_event(self, event: str, now: float):
         """Remember notable events for narrative continuity in humour."""
@@ -7182,6 +7300,9 @@ class AutonomousCarController:
         # Gen24: frontier chain target selection
         self.select_frontier_chain_target(now)
 
+        if self.update_position_awareness(front_distance, now):
+            self.add_stress(self.config.stress_escape_gain * 0.5)
+
         if self.last_escape_heading != 0 and self.prev_front_distance > 0:
             outcome = (front_distance - self.prev_front_distance) / self.prev_front_distance
             h = self.last_escape_heading
@@ -7343,6 +7464,11 @@ class AutonomousCarController:
                 retreat_scale=self.escape_retreat_scale(front_distance),
             )
 
+        if self.is_visually_stuck(now):
+            recovery_cmd = self.build_stuck_recovery_command(front_distance, now)
+            if recovery_cmd is not None:
+                return recovery_cmd
+
         # Brave push: if only the front is blocked and sides are clear, the obstacle
         # might be movable — charge it with decisive force before giving up.
         if (self.is_pushable_obstacle(front_distance)
@@ -7411,54 +7537,10 @@ class AutonomousCarController:
                 colour=self.motion_colour_for("dead_end_recovery", heading, 0.0, front_distance),
             )
 
-        if self.is_stuck(now) and self.should_escalate_recovery(now):
-            self.advance_recovery_stage(now)
-            self.clear_pounce_commitment()
-            stage = self.recovery_stage
-            if stage == 1:
-                wf_active, wf_cmd = self.wall_following_escape(self.last_scan, now)
-                if wf_active and wf_cmd is not None:
-                    self.stuck_escape_times.append(now)
-                    self.add_stress(self.config.stress_escape_gain * 0.5)
-                    return wf_cmd
-                left_s = self.config.recovery_wiggle_speed
-                right_s = -self.config.recovery_wiggle_speed
-                heading = -60 if sum(self.recent_turns) >= 0 else 60
-                self.note_turn(heading)
-                self.stuck_escape_times.append(now)
-                self.add_stress(self.config.stress_escape_gain * 0.5)
-                self.record_notable_event("wiggling", now)
-                return MotionCommand(
-                    mode="escape",
-                    left_speed=left_s,
-                    right_speed=right_s,
-                    heading=heading,
-                    colour=self.motion_colour_for("escape", heading, 0.0, front_distance),
-                )
-            elif stage == 2:
-                heading = self.select_smart_escape_heading(self.last_scan, now)
-                self.stuck_escape_times.append(now)
-                self.add_stress(self.config.stress_escape_gain)
-                self.record_notable_event("reverse_spin", now)
-                return MotionCommand(
-                    mode="escape",
-                    left_speed=-self.config.escape_reverse_speed * 1.2,
-                    right_speed=-self.config.escape_reverse_speed * 1.2,
-                    heading=heading,
-                    colour=self.motion_colour_for("escape", heading, 0.0, front_distance),
-                )
-            else:
-                heading = -80 if sum(self.recent_turns) >= 0 else 80
-                self.stuck_escape_times.append(now)
-                self.add_stress(self.config.stress_escape_gain * 1.5)
-                self.record_notable_event("full_spin", now)
-                return MotionCommand(
-                    mode="escape",
-                    left_speed=-self.config.escape_turn_speed,
-                    right_speed=self.config.escape_turn_speed,
-                    heading=heading,
-                    colour=self.motion_colour_for("escape", heading, 0.0, front_distance),
-                )
+        if self.is_stuck(now):
+            recovery_cmd = self.build_stuck_recovery_command(front_distance, now)
+            if recovery_cmd is not None:
+                return recovery_cmd
 
         if self.pounce_heading != 0 and now < self.pounce_until:
             return self.build_pounce_command(self.pounce_heading, front_distance, now)

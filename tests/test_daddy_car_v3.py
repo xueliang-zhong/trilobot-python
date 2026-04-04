@@ -186,6 +186,34 @@ class DaddyCarV3Tests(unittest.TestCase):
         self.assertGreater(command.left_speed, 0.0)
         self.assertGreater(command.right_speed, 0.0)
 
+    def test_update_position_awareness_marks_visual_stuck_when_scene_does_not_change(self):
+        module = load_daddy_car_v3_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+        controller.current_speed = 0.62
+        controller.last_scan = {-45: 34.0, 0: 32.0, 45: 33.0}
+
+        controller.update_position_awareness(front_distance=32.0, now=1.0)
+        controller.update_position_awareness(front_distance=31.5, now=1.7)
+        controller.update_position_awareness(front_distance=31.4, now=2.5)
+
+        self.assertTrue(controller.is_visually_stuck(2.5))
+
+    def test_plan_uses_recovery_when_visually_stuck_even_without_front_danger(self):
+        module = load_daddy_car_v3_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+        controller.current_speed = 0.58
+        controller.last_scan = {-80: 38.0, -45: 34.0, 0: 32.0, 45: 33.0, 80: 36.0}
+        controller.last_scan_time = 4.0
+        controller.update_position_awareness(front_distance=32.0, now=4.2)
+        controller.update_position_awareness(front_distance=31.6, now=5.0)
+        controller.update_position_awareness(front_distance=31.5, now=5.8)
+
+        command = controller.plan(front_distance=31.5, now=5.9)
+
+        self.assertEqual(command.mode, "escape")
+        self.assertNotEqual(command.left_speed, command.right_speed)
+        self.assertEqual(controller.recovery_stage, 1)
+
     def test_render_dashboard_includes_compact_see_and_think_sections(self):
         module = load_daddy_car_v3_module()
         controller = module.AutonomousCarController(module.AutonomousCarConfig())
