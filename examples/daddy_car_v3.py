@@ -7970,6 +7970,17 @@ def _box(title: str, lines: list[str], accent: Colour) -> list[str]:
     return [top, *body, bottom]
 
 
+def _merge_columns(left_lines: list[str], right_lines: list[str], gap: int = 4) -> list[str]:
+    left_width = max((len(line) for line in left_lines), default=0)
+    total_lines = max(len(left_lines), len(right_lines))
+    merged = []
+    for index in range(total_lines):
+        left = left_lines[index] if index < len(left_lines) else ""
+        right = right_lines[index] if index < len(right_lines) else ""
+        merged.append(f"{left.ljust(left_width)}{' ' * gap}{right}".rstrip())
+    return merged
+
+
 def render_tui_dashboard(
     controller: "AutonomousCarController",
     command: MotionCommand,
@@ -7982,11 +7993,20 @@ def render_tui_dashboard(
     transient_message: str = "",
 ) -> str:
     scan = controller.last_scan or {angle: 0.0 for angle in controller.config.scan_angles}
-    see_lines = render_forward_view(scan, controller).splitlines()
+    see_view_lines = render_forward_view(scan, controller).splitlines()
+    light_lines = [
+        f"{ANSI_BOLD}lights{ANSI_RESET}",
+        render_underlight_swatch(_tui_distance_colour(front_distance, controller.config), "front"),
+        render_underlight_swatch(_tui_heading_colour(command.heading), "steer"),
+        render_underlight_swatch(_tui_speed_colour(controller.current_speed, controller.config), "rear"),
+        render_underlight_swatch(command.colour, "drive intent"),
+        "",
+        emotion,
+        light_description or "no light sync text",
+    ]
+    see_lines = _merge_columns(see_view_lines, light_lines)
     see_lines.append(f"heat  {controller.format_heatmap()}")
-    see_lines.append(
-        f"trap  body>={controller.required_gap_width():.0f}cm  pinch<={controller.config.min_side_clearance_cm:.0f}cm"
-    )
+    see_lines.append(f"trap  body>={controller.required_gap_width():.0f}cm  pinch<={controller.config.min_side_clearance_cm:.0f}cm")
 
     decision = command.mode.upper().replace("_", " ")
     heading_word = "straight"
@@ -8019,13 +8039,6 @@ def render_tui_dashboard(
     if transient_message:
         think_lines.append(f"event  {transient_message}")
 
-    light_lines = [
-        f"{render_underlight_swatch(_tui_distance_colour(front_distance, controller.config), 'front')}",
-        f"{render_underlight_swatch(_tui_heading_colour(command.heading), 'steer')}",
-        f"{render_underlight_swatch(_tui_speed_colour(controller.current_speed, controller.config), 'rear')}",
-        f"{render_underlight_swatch(command.colour, 'drive intent')}",
-    ]
-
     header = [
         "\x1b[H\x1b[2J",
         f"{ANSI_BOLD}{_ansi_fg((255, 210, 80))}TRILOBOT AUTONOMOUS COMMAND DECK{ANSI_RESET}",
@@ -8035,7 +8048,6 @@ def render_tui_dashboard(
     layout = [
         *_box("SEE", see_lines, (64, 220, 255)),
         *_box("THINK", think_lines, (255, 170, 64)),
-        *_box("LIGHTS", light_lines, (180, 120, 255)),
     ]
     return "\n".join(header + [""] + layout) + ANSI_RESET
 

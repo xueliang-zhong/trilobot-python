@@ -160,7 +160,7 @@ class DaddyCarV3Tests(unittest.TestCase):
         self.assertNotEqual(heading, -45)
         self.assertEqual(heading, 0)
 
-    def test_render_dashboard_includes_see_think_and_lights_sections(self):
+    def test_render_dashboard_includes_compact_see_and_think_sections(self):
         module = load_daddy_car_v3_module()
         controller = module.AutonomousCarController(module.AutonomousCarConfig())
         controller.last_scan = {-80: 40.0, -45: 55.0, 0: 88.0, 45: 70.0, 80: 48.0}
@@ -180,7 +180,7 @@ class DaddyCarV3Tests(unittest.TestCase):
 
         self.assertIn("SEE", dashboard)
         self.assertIn("THINK", dashboard)
-        self.assertIn("LIGHTS", dashboard)
+        self.assertNotIn("┌─ LIGHTS", dashboard)
         self.assertIn("open road ahead", dashboard)
         self.assertIn("SCAN refreshed", dashboard)
         self.assertIn("\x1b[", dashboard)
@@ -188,6 +188,9 @@ class DaddyCarV3Tests(unittest.TestCase):
         self.assertIn("AHEAD", dashboard)
         self.assertIn("RIGHT", dashboard)
         self.assertIn("drive lane", dashboard)
+        self.assertIn("front", dashboard)
+        self.assertIn("steer", dashboard)
+        self.assertIn("rear", dashboard)
 
     def test_render_forward_view_places_sensor_columns_in_car_pov_scene(self):
         module = load_daddy_car_v3_module()
