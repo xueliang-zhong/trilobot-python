@@ -89,6 +89,9 @@ class AutonomousCarConfig:
     escape_turn_speed: float = 0.74
     escape_reverse_s: float = 0.22
     escape_turn_s: float = 0.32
+    escape_retreat_boost: float = 0.55
+    escape_retreat_duration_boost: float = 0.75
+    escape_retreat_max_speed: float = 0.9
     front_history_size: int = 5
     recent_turn_memory: int = 8
     exploration_bonus: float = 10.0
@@ -851,6 +854,7 @@ class MotionCommand:
     right_speed: float
     heading: int
     colour: Colour
+    retreat_scale: float = 1.0
 
 
 @dataclass
@@ -1722,6 +1726,17 @@ class AutonomousCarController:
         if now - self.last_escape_time > self.config.escape_escalation_window:
             return 0
         return min(self.escape_escalation_level, self.config.escape_escalation_levels - 1)
+
+    def escape_retreat_scale(self, front_distance: float) -> float:
+        if front_distance <= 0.0:
+            return 1.0 + self.config.escape_retreat_boost
+        danger = max(self.config.danger_distance, 1.0)
+        closeness = max(0.0, min(1.0, (danger - front_distance) / danger))
+        return 1.0 + closeness * self.config.escape_retreat_boost
+
+    def escape_reverse_speed_for(self, front_distance: float) -> float:
+        speed = self.config.escape_reverse_speed * self.escape_retreat_scale(front_distance)
+        return min(self.config.escape_retreat_max_speed, speed)
 
     def escalate_escape(self, now: float):
         self.last_escape_time = now
@@ -7321,10 +7336,11 @@ class AutonomousCarController:
             self.last_escape_front_after = front_distance
             return MotionCommand(
                 mode="escape",
-                left_speed=-self.config.escape_reverse_speed,
-                right_speed=-self.config.escape_reverse_speed,
+                left_speed=-self.escape_reverse_speed_for(front_distance),
+                right_speed=-self.escape_reverse_speed_for(front_distance),
                 heading=heading,
                 colour=self.motion_colour_for("escape", heading, 0.0, front_distance),
+                retreat_scale=self.escape_retreat_scale(front_distance),
             )
 
         # Brave push: if only the front is blocked and sides are clear, the obstacle
@@ -7367,10 +7383,11 @@ class AutonomousCarController:
             self.last_escape_front_after = front_distance
             return MotionCommand(
                 mode="escape",
-                left_speed=-self.config.escape_reverse_speed,
-                right_speed=-self.config.escape_reverse_speed,
+                left_speed=-self.escape_reverse_speed_for(front_distance),
+                right_speed=-self.escape_reverse_speed_for(front_distance),
                 heading=heading,
                 colour=self.motion_colour_for("escape", heading, 0.0, front_distance),
+                retreat_scale=self.escape_retreat_scale(front_distance),
             )
 
         if now - self.dead_end_recovery_time < 1.5:
@@ -9809,9 +9826,11 @@ def apply_command(tbot, controller: AutonomousCarController, command: MotionComm
         if command.mode == "escape":
             controller.note_turn(command.heading)
             escalation = controller.get_escape_escalation_level(time.monotonic())
-            reverse_duration = controller.config.escape_reverse_s * (1.0 + escalation * 0.3)
+            retreat_scale = max(1.0, command.retreat_scale)
+            reverse_speed = min(controller.config.escape_retreat_max_speed, max(abs(command.left_speed), abs(command.right_speed), controller.config.escape_reverse_speed))
+            reverse_duration = controller.config.escape_reverse_s * (1.0 + escalation * 0.3 + (retreat_scale - 1.0) * controller.config.escape_retreat_duration_boost)
             turn_duration = controller.config.escape_turn_s * (1.0 + escalation * 0.4)
-            _safe_hardware_call(tbot.backward, controller.config.escape_reverse_speed)
+            _safe_hardware_call(tbot.backward, reverse_speed)
             _safe_sleep(reverse_duration)
             if command.heading < 0:
                 _safe_hardware_call(tbot.turn_left, controller.config.escape_turn_speed)

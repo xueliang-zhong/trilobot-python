@@ -161,6 +161,31 @@ class DaddyCarV3Tests(unittest.TestCase):
         self.assertNotEqual(heading, -45)
         self.assertEqual(heading, 0)
 
+    def test_plan_escape_retreats_more_aggressively_for_immediate_blocker(self):
+        module = load_daddy_car_v3_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+        controller.last_scan = {-80: 40.0, -45: 35.0, 0: 6.0, 45: 38.0, 80: 42.0}
+        controller.last_scan_time = 3.0
+
+        command = controller.plan(front_distance=6.0, now=3.1)
+
+        self.assertEqual(command.mode, "escape")
+        self.assertLess(command.left_speed, -controller.config.escape_reverse_speed)
+        self.assertLess(command.right_speed, -controller.config.escape_reverse_speed)
+
+    def test_plan_brave_push_keeps_forward_charge_behavior(self):
+        module = load_daddy_car_v3_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+        controller.last_scan = {-80: 70.0, -45: 68.0, 0: 20.0, 45: 72.0, 80: 74.0}
+        controller.last_scan_time = 5.0
+        controller.last_push_time = -math.inf
+
+        command = controller.plan(front_distance=20.0, now=5.1)
+
+        self.assertEqual(command.mode, "brave_push")
+        self.assertGreater(command.left_speed, 0.0)
+        self.assertGreater(command.right_speed, 0.0)
+
     def test_render_dashboard_includes_compact_see_and_think_sections(self):
         module = load_daddy_car_v3_module()
         controller = module.AutonomousCarController(module.AutonomousCarConfig())
