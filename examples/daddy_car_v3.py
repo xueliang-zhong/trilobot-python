@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 import time
 from colorsys import hsv_to_rgb
 from collections import deque
@@ -7856,6 +7857,7 @@ def _print_scan(scan: Dict[int, float]):
 ANSI_RESET = "\x1b[0m"
 ANSI_BOLD = "\x1b[1m"
 ANSI_DIM = "\x1b[2m"
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def _ansi_fg(rgb: Colour) -> str:
@@ -7924,6 +7926,14 @@ def _distance_state(distance: float, cfg: "AutonomousCarConfig") -> str:
     return "CLEAR"
 
 
+def _visible_len(text: str) -> int:
+    return len(ANSI_RE.sub("", text))
+
+
+def _visible_ljust(text: str, width: int) -> str:
+    return text + (" " * max(0, width - _visible_len(text)))
+
+
 def render_forward_view(scan: Dict[int, float], controller: "AutonomousCarController") -> str:
     cfg = controller.config
     max_distance = max(cfg.max_distance, 1.0)
@@ -7963,21 +7973,21 @@ def render_forward_view(scan: Dict[int, float], controller: "AutonomousCarContro
 
 
 def _box(title: str, lines: list[str], accent: Colour) -> list[str]:
-    width = max(len(title) + 2, *(len(line) for line in lines)) if lines else len(title) + 2
+    width = max(len(title) + 2, *(_visible_len(line) for line in lines)) if lines else len(title) + 2
     top = f"{_ansi_fg(accent)}┌─ {title}{'─' * max(0, width - len(title) - 1)}┐{ANSI_RESET}"
-    body = [f"{_ansi_fg(accent)}│{ANSI_RESET} {line.ljust(width)} {_ansi_fg(accent)}│{ANSI_RESET}" for line in lines]
+    body = [f"{_ansi_fg(accent)}│{ANSI_RESET} {_visible_ljust(line, width)} {_ansi_fg(accent)}│{ANSI_RESET}" for line in lines]
     bottom = f"{_ansi_fg(accent)}└{'─' * (width + 2)}┘{ANSI_RESET}"
     return [top, *body, bottom]
 
 
 def _merge_columns(left_lines: list[str], right_lines: list[str], gap: int = 4) -> list[str]:
-    left_width = max((len(line) for line in left_lines), default=0)
+    left_width = max((_visible_len(line) for line in left_lines), default=0)
     total_lines = max(len(left_lines), len(right_lines))
     merged = []
     for index in range(total_lines):
         left = left_lines[index] if index < len(left_lines) else ""
         right = right_lines[index] if index < len(right_lines) else ""
-        merged.append(f"{left.ljust(left_width)}{' ' * gap}{right}".rstrip())
+        merged.append(f"{_visible_ljust(left, left_width)}{' ' * gap}{right}".rstrip())
     return merged
 
 
@@ -8002,7 +8012,6 @@ def render_tui_dashboard(
         render_underlight_swatch(command.colour, "drive intent"),
         "",
         emotion,
-        light_description or "no light sync text",
     ]
     see_lines = _merge_columns(see_view_lines, light_lines)
     see_lines.append(f"heat  {controller.format_heatmap()}")

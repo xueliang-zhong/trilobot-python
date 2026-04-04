@@ -1,5 +1,6 @@
 import importlib.util
 import math
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -191,6 +192,29 @@ class DaddyCarV3Tests(unittest.TestCase):
         self.assertIn("front", dashboard)
         self.assertIn("steer", dashboard)
         self.assertIn("rear", dashboard)
+
+    def test_render_dashboard_keeps_see_box_visibly_compact(self):
+        module = load_daddy_car_v3_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+        controller.last_scan = {-80: 74.3, -45: 82.0, 0: 118.1, 45: 86.2, 80: 68.5}
+        controller.current_speed = 0.66
+        command = module.MotionCommand("drive", 0.66, 0.61, 13, (32, 200, 180))
+
+        dashboard = module.render_tui_dashboard(
+            controller=controller,
+            command=command,
+            front_distance=118.1,
+            emotion="feel=curious",
+            quip="...",
+            now=22.0,
+            follow_mode=False,
+            light_description="feel=curious   | F:teal(118cm open!)      M:blue(turning-R)    R:teal(cruising)",
+            transient_message="scan refreshed",
+        )
+
+        visible_lines = [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in dashboard.splitlines()]
+        see_top = next(line for line in visible_lines if line.startswith("┌─ SEE"))
+        self.assertLess(len(see_top), 130)
 
     def test_render_forward_view_places_sensor_columns_in_car_pov_scene(self):
         module = load_daddy_car_v3_module()
