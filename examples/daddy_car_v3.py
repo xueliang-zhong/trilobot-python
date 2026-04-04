@@ -34,6 +34,42 @@ def _clamp_rgb_tuple(rgb: Tuple[float, float, float]) -> Tuple[int, int, int]:
     )
 
 
+def _safe_hardware_call(func, *args, default=None, **kwargs):
+    try:
+        return func(*args, **kwargs)
+    except Exception:
+        return default
+
+
+def _safe_sleep(duration: float):
+    try:
+        time.sleep(max(0.0, duration))
+    except Exception:
+        pass
+
+
+class _SafeLightingProxy:
+    def __init__(self, tbot):
+        self._tbot = tbot
+
+    def __getattr__(self, name):
+        return getattr(self._tbot, name)
+
+    def set_underlight(self, led, r, g, b, show=True):
+        rgb = _clamp_rgb_tuple((r / 255.0, g / 255.0, b / 255.0))
+        _safe_hardware_call(self._tbot.set_underlight, led, *rgb, show=show)
+
+    def fill_underlighting(self, r, g, b):
+        rgb = _clamp_rgb_tuple((r / 255.0, g / 255.0, b / 255.0))
+        _safe_hardware_call(self._tbot.fill_underlighting, *rgb)
+
+    def fill_underlighting_clamp_rgb_tuple(self, rgb):
+        self.fill_underlighting(*_clamp_rgb_tuple(rgb))
+
+    def show_underlighting(self):
+        _safe_hardware_call(self._tbot.show_underlighting)
+
+
 @dataclass(frozen=True)
 class AutonomousCarConfig:
     scan_angles: Tuple[int, ...] = (-80, -45, 0, 45, 80)
@@ -45,8 +81,8 @@ class AutonomousCarConfig:
     caution_distance: float = 28.0
     cruise_distance: float = 55.0
     max_distance: float = 140.0
-    cruise_speed: float = 0.62
-    cautious_speed: float = 0.42
+    cruise_speed: float = 0.68
+    cautious_speed: float = 0.48
     steer_gain: float = 0.48
     escape_reverse_speed: float = 0.45
     escape_turn_speed: float = 0.74
@@ -72,7 +108,7 @@ class AutonomousCarConfig:
     stuck_escape_count: int = 4
     stuck_spin_s: float = 0.55
     open_space_distance: float = 70.0
-    open_space_speed: float = 0.82
+    open_space_speed: float = 0.90
     speed_accel_rate: float = 0.10   # max speed increase per loop cycle
     speed_decel_rate: float = 0.18   # max speed decrease per loop cycle
     open_space_scan_s: float = 1.2   # proactive scan interval when all angles are clear
@@ -794,6 +830,14 @@ class AutonomousCarConfig:
     predictive_path_planning: bool = True                   # enable path prediction
     path_planning_horizon: int = 5                          # steps to look ahead
     adaptive_speed_profile: bool = True                     # speed adapts to terrain
+    straight_preference_gain: float = 18.0                 # bonus for staying straight when the forward lane is already strong
+    straight_preference_distance: float = 85.0             # minimum front clearance before strong straight-line preference applies
+    allow_emotional_moves: bool = False                    # favour continuous progress over choreographed moves
+    allow_room_sweep: bool = False                         # disable nonessential coverage sweeps by default
+    allow_wander: bool = False                             # disable nonessential wander mode by default
+    allow_edge_patrol: bool = False                        # disable nonessential patrol mode by default
+    allow_boustrophedon: bool = False                      # disable nonessential full-room pattern sweeps by default
+    allow_spiral_exploration: bool = False                 # disable nonessential spiral exploration by default
 
 @dataclass(frozen=True)
 class MotionCommand:
@@ -1944,6 +1988,14 @@ class AutonomousCarController:
 
         clear_bonus = max(front_distance - self.config.caution_distance, 0.0)
         score += clear_bonus * self.config.forward_bias_gain * center_weight
+        if (
+            not escape
+            and front_distance >= self.config.straight_preference_distance
+            and distance >= front_distance * 0.9
+        ):
+            score += self.config.straight_preference_gain * center_weight
+            if angle == 0:
+                score += self.config.straight_preference_gain
 
         if front_distance <= self.config.caution_distance:
             score -= abs(angle) * 0.04
@@ -4107,6 +4159,8 @@ class AutonomousCarController:
     # ─── Gen22: boustrophedon coverage path planning ──────────────────────
 
     def should_activate_boustrophedon(self, now: float) -> bool:
+        if not self.config.allow_boustrophedon:
+            return False
         if self.boustrophedon_active:
             return True
         if now - self.boustrophedon_last_run_time < self.config.boustrophedon_cooldown_s:
@@ -4638,6 +4692,8 @@ class AutonomousCarController:
     # ─── Gen24: Room sweep coverage ───────────────────────────────────────
 
     def should_activate_room_sweep(self, now: float) -> bool:
+        if not self.config.allow_room_sweep:
+            return False
         if self.room_sweep_active:
             return True
         if now - self.room_sweep_last_run_time < self.config.room_sweep_cooldown_s:
@@ -4718,6 +4774,9 @@ class AutonomousCarController:
     # ─── Gen19: systematic spiral exploration ─────────────────────────────
 
     def maybe_start_spiral_exploration(self, heading: int, front_distance: float, now: float) -> int:
+        if not self.config.allow_spiral_exploration:
+            self.spiral_active = False
+            return heading
         if self.spiral_active:
             elapsed = now - self.spiral_start_time
             if elapsed > self.config.spiral_duration:
@@ -4800,6 +4859,9 @@ class AutonomousCarController:
     # ─── Gen19: enhanced emotional moves ──────────────────────────────────
 
     def trigger_emotional_move(self, move_type: str, now: float):
+        if not self.config.allow_emotional_moves:
+            self.emotional_move_active = False
+            return
         if now - self.last_emotional_move < self.config.emotional_move_cooldown:
             return
         self.emotional_move_active = True
@@ -5706,6 +5768,8 @@ class AutonomousCarController:
     # ─── Gen25: Intelligent wander exploration ────────────────────────────
 
     def should_activate_wander(self, now: float) -> bool:
+        if not self.config.allow_wander:
+            return False
         if self.wander_active:
             return True
         if now - self.wander_last_run_time < self.config.wander_cooldown_s:
@@ -5752,6 +5816,8 @@ class AutonomousCarController:
     # ─── Gen25: Edge patrol exploration ───────────────────────────────────
 
     def should_activate_edge_patrol(self, now: float) -> bool:
+        if not self.config.allow_edge_patrol:
+            return False
         if self.edge_patrol_active:
             return True
         if now - self.edge_patrol_last_run_time < self.config.edge_patrol_cooldown_s:
@@ -8054,20 +8120,29 @@ def _describe_lights(command: MotionCommand, controller: "AutonomousCarControlle
 def perform_scan(tbot, controller: AutonomousCarController) -> Dict[int, float]:
     scan = {}
     for angle in controller.config.scan_angles:
-        tbot.set_servo_angle(angle)
-        time.sleep(controller.config.scan_pause_s)
-        scan[angle] = tbot.read_distance(
-            timeout=controller.config.scan_timeout_ms,
-            samples=controller.config.scan_samples,
+        _safe_hardware_call(tbot.set_servo_angle, angle)
+        _safe_sleep(controller.config.scan_pause_s)
+        scan[angle] = controller.sanitize_distance(
+            _safe_hardware_call(
+                tbot.read_distance,
+                timeout=controller.config.scan_timeout_ms,
+                samples=controller.config.scan_samples,
+                default=0.0,
+            )
         )
-    tbot.set_servo_angle(0)
-    time.sleep(controller.config.scan_pause_s)
-    controller.update_scan(scan, time.monotonic())
+    _safe_hardware_call(tbot.set_servo_angle, 0)
+    _safe_sleep(controller.config.scan_pause_s)
+    try:
+        controller.update_scan(scan, time.monotonic())
+    except Exception:
+        controller.last_scan = dict(scan)
+        controller.last_scan_time = time.monotonic()
     return scan
 
 
 def apply_underlighting(tbot, controller: AutonomousCarController, command: MotionCommand, now: float):
     """Express the car's emotional state through per-LED underlighting."""
+    tbot = _SafeLightingProxy(tbot)
     try:
         from trilobot import (
             LIGHT_FRONT_LEFT, LIGHT_FRONT_RIGHT,
@@ -9489,85 +9564,99 @@ def apply_underlighting(tbot, controller: AutonomousCarController, command: Moti
 def apply_command(tbot, controller: AutonomousCarController, command: MotionCommand, now: float | None = None):
     if now is None:
         now = time.monotonic()
-    apply_underlighting(tbot, controller, command, now)
+    try:
+        apply_underlighting(tbot, controller, command, now)
 
-    if command.mode == "escape":
-        controller.note_turn(command.heading)
-        escalation = controller.get_escape_escalation_level(time.monotonic())
-        reverse_duration = controller.config.escape_reverse_s * (1.0 + escalation * 0.3)
-        turn_duration = controller.config.escape_turn_s * (1.0 + escalation * 0.4)
-        tbot.backward(controller.config.escape_reverse_speed)
-        time.sleep(reverse_duration)
-        if command.heading < 0:
-            tbot.turn_left(controller.config.escape_turn_speed)
-        else:
-            tbot.turn_right(controller.config.escape_turn_speed)
-        time.sleep(turn_duration)
-        tbot.stop()
-        if controller.is_stuck(time.monotonic()):
-            controller.stuck_escape_times.clear()
-            spin_duration = controller.config.stuck_spin_s * (1.0 + escalation * 0.5)
-            if sum(controller.recent_turns) >= 0:
-                tbot.turn_left(controller.config.escape_turn_speed)
+        if command.mode == "escape":
+            controller.note_turn(command.heading)
+            escalation = controller.get_escape_escalation_level(time.monotonic())
+            reverse_duration = controller.config.escape_reverse_s * (1.0 + escalation * 0.3)
+            turn_duration = controller.config.escape_turn_s * (1.0 + escalation * 0.4)
+            _safe_hardware_call(tbot.backward, controller.config.escape_reverse_speed)
+            _safe_sleep(reverse_duration)
+            if command.heading < 0:
+                _safe_hardware_call(tbot.turn_left, controller.config.escape_turn_speed)
             else:
-                tbot.turn_right(controller.config.escape_turn_speed)
-            time.sleep(spin_duration)
-            tbot.stop()
-        controller.last_scan_time = -math.inf
-        return
+                _safe_hardware_call(tbot.turn_right, controller.config.escape_turn_speed)
+            _safe_sleep(turn_duration)
+            _safe_hardware_call(tbot.stop)
+            if controller.is_stuck(time.monotonic()):
+                controller.stuck_escape_times.clear()
+                spin_duration = controller.config.stuck_spin_s * (1.0 + escalation * 0.5)
+                if sum(controller.recent_turns) >= 0:
+                    _safe_hardware_call(tbot.turn_left, controller.config.escape_turn_speed)
+                else:
+                    _safe_hardware_call(tbot.turn_right, controller.config.escape_turn_speed)
+                _safe_sleep(spin_duration)
+                _safe_hardware_call(tbot.stop)
+            controller.last_scan_time = -math.inf
+            return
 
-    if command.mode in ("follow", "follow_search", "peek_pounce"):
-        tbot.set_motor_speeds(command.left_speed, command.right_speed)
-        return
+        if command.mode in ("follow", "follow_search", "peek_pounce"):
+            if _safe_hardware_call(tbot.set_motor_speeds, command.left_speed, command.right_speed, default=False) is False:
+                _safe_hardware_call(tbot.stop)
+            return
 
-    if command.mode in ("wander", "edge_patrol"):
-        tbot.set_motor_speeds(command.left_speed, command.right_speed)
-        time.sleep(0.08)
-        tbot.stop()
-        return
+        if command.mode in ("wander", "edge_patrol"):
+            if _safe_hardware_call(tbot.set_motor_speeds, command.left_speed, command.right_speed, default=False) is False:
+                _safe_hardware_call(tbot.stop)
+                return
+            _safe_sleep(0.08)
+            _safe_hardware_call(tbot.stop)
+            return
 
-    if command.mode == "brave_push":
-        tbot.set_motor_speeds(command.left_speed, command.right_speed)
-        time.sleep(controller.config.push_duration_s)
-        tbot.stop()
-        controller.last_scan_time = -math.inf  # force immediate rescan to see if it moved
-        return
+        if command.mode == "brave_push":
+            if _safe_hardware_call(tbot.set_motor_speeds, command.left_speed, command.right_speed, default=False) is False:
+                _safe_hardware_call(tbot.stop)
+                return
+            _safe_sleep(controller.config.push_duration_s)
+            _safe_hardware_call(tbot.stop)
+            controller.last_scan_time = -math.inf
+            return
 
-    if command.mode == "dead_end_recovery":
-        controller.note_turn(command.heading)
-        tbot.set_motor_speeds(command.left_speed, command.right_speed)
-        time.sleep(controller.config.dead_end_recovery_turn_s)
-        tbot.stop()
-        return
+        if command.mode == "dead_end_recovery":
+            controller.note_turn(command.heading)
+            if _safe_hardware_call(tbot.set_motor_speeds, command.left_speed, command.right_speed, default=False) is False:
+                _safe_hardware_call(tbot.stop)
+                return
+            _safe_sleep(controller.config.dead_end_recovery_turn_s)
+            _safe_hardware_call(tbot.stop)
+            return
 
-    if command.mode in ("victory_dance", "happy_wiggle", "frustrated_shimmy", "confident_strut",
-                        "curious_tilt", "excited_bounce", "contemplative_circle", "celebration_spin",
-                        "surprise_shake", "spiral_exploration", "nervous_creep", "triumphant_arc",
-                        "confused_figure8", "relaxed_cruise", "alert_scan",
-                        "satisfied_purr", "determined_lunge", "grateful_bow", "victory_lap",
-                        "curious_sniff", "gentle_weave", "happy_hop",
-                        "explorer_pride", "mapping_joy", "corridor_dance",
-                        "open_space_celebration", "wall_caress", "discovery_spin",
-                        "curious_probe", "excited_wiggle", "contemplative_pause", "confident_cruise",
-                        "explorer_sprint", "cautious_approach", "joyful_bounce", "discovery_celebration",
-                        "room_sweep",
-                        "joyful_spin", "curious_weave", "excited_dash", "peaceful_glide",
-                        "mischievous_zigzag", "proud_parade", "wonder_gaze", "energetic_hop",
-                        "flow_dance", "gratitude", "relief", "wonder", "playful_dart",
-                        "victory_bow", "contented_sway", "triumphant_burst",
-                        "straight_streak_celebration", "open_space_joy", "gap_fill_satisfaction",
-                        "corner_escape_relief",
-                        "corridor_cruise", "boundary_relief", "straight_cruise_joy",
-                        "smart_recovery_triumph"):
-        tbot.set_motor_speeds(command.left_speed, command.right_speed)
-        time.sleep(0.08)
-        tbot.stop()
-        return
+        if command.mode in ("victory_dance", "happy_wiggle", "frustrated_shimmy", "confident_strut",
+                            "curious_tilt", "excited_bounce", "contemplative_circle", "celebration_spin",
+                            "surprise_shake", "spiral_exploration", "nervous_creep", "triumphant_arc",
+                            "confused_figure8", "relaxed_cruise", "alert_scan",
+                            "satisfied_purr", "determined_lunge", "grateful_bow", "victory_lap",
+                            "curious_sniff", "gentle_weave", "happy_hop",
+                            "explorer_pride", "mapping_joy", "corridor_dance",
+                            "open_space_celebration", "wall_caress", "discovery_spin",
+                            "curious_probe", "excited_wiggle", "contemplative_pause", "confident_cruise",
+                            "explorer_sprint", "cautious_approach", "joyful_bounce", "discovery_celebration",
+                            "room_sweep",
+                            "joyful_spin", "curious_weave", "excited_dash", "peaceful_glide",
+                            "mischievous_zigzag", "proud_parade", "wonder_gaze", "energetic_hop",
+                            "flow_dance", "gratitude", "relief", "wonder", "playful_dart",
+                            "victory_bow", "contented_sway", "triumphant_burst",
+                            "straight_streak_celebration", "open_space_joy", "gap_fill_satisfaction",
+                            "corner_escape_relief",
+                            "corridor_cruise", "boundary_relief", "straight_cruise_joy",
+                            "smart_recovery_triumph"):
+            if _safe_hardware_call(tbot.set_motor_speeds, command.left_speed, command.right_speed, default=False) is False:
+                _safe_hardware_call(tbot.stop)
+                return
+            _safe_sleep(0.08)
+            _safe_hardware_call(tbot.stop)
+            return
 
-    if abs(command.heading) >= 30:
-        controller.note_turn(command.heading)
+        if abs(command.heading) >= 30:
+            controller.note_turn(command.heading)
 
-    tbot.set_motor_speeds(command.left_speed, command.right_speed)
+        if _safe_hardware_call(tbot.set_motor_speeds, command.left_speed, command.right_speed, default=False) is False:
+            _safe_hardware_call(tbot.stop)
+    except Exception:
+        controller.current_speed = 0.0
+        _safe_hardware_call(tbot.stop)
 
 
 def startup_spin_scan(tbot, controller: AutonomousCarController):
@@ -9583,20 +9672,20 @@ def startup_spin_scan(tbot, controller: AutonomousCarController):
         quad_front.append(controller.sanitize_distance(controller.last_scan.get(0, 0.0)))
         _print_scan(controller.last_scan)
         print(f"[HEAT] {controller.format_heatmap()}  (danger memory, █=avoid)")
-        tbot.turn_left(cfg.escape_turn_speed)
-        time.sleep(turn_s)
-        tbot.stop()
-        time.sleep(0.08)
+        _safe_hardware_call(tbot.turn_left, cfg.escape_turn_speed)
+        _safe_sleep(turn_s)
+        _safe_hardware_call(tbot.stop)
+        _safe_sleep(0.08)
 
     # Turn to face the most open quadrant
     best = quad_front.index(max(quad_front))
     turns_to_best = (1 + best) % 4   # we ended 270° left of start; 1 more turn = 0°
     print(f"[SPIN] Best heading: quadrant {best} ({best*90}°), front={quad_front[best]:.0f}cm")
     for _ in range(turns_to_best):
-        tbot.turn_left(cfg.escape_turn_speed)
-        time.sleep(turn_s)
-        tbot.stop()
-        time.sleep(0.08)
+        _safe_hardware_call(tbot.turn_left, cfg.escape_turn_speed)
+        _safe_sleep(turn_s)
+        _safe_hardware_call(tbot.stop)
+        _safe_sleep(0.08)
 
     perform_scan(tbot, controller)
     _print_scan(controller.last_scan)
@@ -9605,7 +9694,11 @@ def startup_spin_scan(tbot, controller: AutonomousCarController):
 
 
 def main():
-    from trilobot import BUTTON_A, BUTTON_X, BUTTON_Y, Trilobot
+    try:
+        from trilobot import BUTTON_A, BUTTON_X, BUTTON_Y, Trilobot
+    except Exception as exc:
+        print(f"[FATAL] Unable to import Trilobot runtime: {exc}")
+        return
 
     print("Trilobot Example: Autonomous Car")
     print("  A = toggle follow mode   X = stop   Y = distance_lights\n")
@@ -9618,95 +9711,103 @@ def main():
     launch_distance_lights = False
     follow_mode = False
     btn_a_prev = False
+    loop_error_count = 0
 
     try:
-        tbot.initialise_servo()
-        tbot.set_servo_angle(0)
-        time.sleep(0.25)
+        _safe_hardware_call(tbot.initialise_servo)
+        _safe_hardware_call(tbot.set_servo_angle, 0)
+        _safe_sleep(0.25)
         startup_spin_scan(tbot, controller)
 
-        while not tbot.read_button(BUTTON_X):
-            # Button A: toggle follow mode (debounced)
-            btn_a_now = tbot.read_button(BUTTON_A)
-            if btn_a_now and not btn_a_prev:
-                follow_mode = not follow_mode
-                if on_inline_line:
-                    print()
-                    on_inline_line = False
-                label = "FOLLOW mode ON  (A again to return)" if follow_mode else "AUTONOMOUS mode"
-                print(f"[A] {label}")
-            btn_a_prev = btn_a_now
-
-            if tbot.read_button(BUTTON_Y):
-                launch_distance_lights = True
+        while True:
+            if _safe_hardware_call(tbot.read_button, BUTTON_X, default=False):
                 break
+            try:
+                # Button A: toggle follow mode (debounced)
+                btn_a_now = bool(_safe_hardware_call(tbot.read_button, BUTTON_A, default=False))
+                if btn_a_now and not btn_a_prev:
+                    follow_mode = not follow_mode
+                    if on_inline_line:
+                        print()
+                        on_inline_line = False
+                    label = "FOLLOW mode ON  (A again to return)" if follow_mode else "AUTONOMOUS mode"
+                    print(f"[A] {label}")
+                btn_a_prev = btn_a_now
 
-            now = time.monotonic()
-            front_distance = tbot.read_distance(
-                timeout=controller.config.front_timeout_ms,
-                samples=controller.config.front_samples,
-            )
+                if _safe_hardware_call(tbot.read_button, BUTTON_Y, default=False):
+                    launch_distance_lights = True
+                    break
 
-            if follow_mode:
-                command = controller.plan_follow(front_distance)
-                emotion = _describe_lights(command, controller, front_distance)
-                if now - last_print_time >= print_interval:
-                    fd_str = f"{front_distance:.0f}cm" if front_distance > 0 else " ---"
-                    err = front_distance - controller.config.follow_target_distance if front_distance > 0 else 0.0
-                    if command.left_speed > 0.01:
-                        action = "chasing →"
-                    elif command.left_speed < -0.01:
-                        action = "← backing"
-                    else:
-                        action = "holding  "
+                now = time.monotonic()
+                front_distance = controller.sanitize_distance(
+                    _safe_hardware_call(
+                        tbot.read_distance,
+                        timeout=controller.config.front_timeout_ms,
+                        samples=controller.config.front_samples,
+                        default=0.0,
+                    )
+                )
+
+                if follow_mode:
+                    command = controller.plan_follow(front_distance)
+                    emotion = _describe_lights(command, controller, front_distance)
+                    if now - last_print_time >= print_interval:
+                        fd_str = f"{front_distance:.0f}cm" if front_distance > 0 else " ---"
+                        err = front_distance - controller.config.follow_target_distance if front_distance > 0 else 0.0
+                        if command.left_speed > 0.01:
+                            action = "chasing →"
+                        elif command.left_speed < -0.01:
+                            action = "← backing"
+                        else:
+                            action = "holding  "
+                        stress_ch = ' ░▒▓█'[min(4, int(controller.stress * 5))]
+                        print(f"\r[FOLLOW] front={fd_str}  err={err:+.0f}cm  {action}  stress={stress_ch}  | {emotion}   ", end='', flush=True)
+                        on_inline_line = True
+                        last_print_time = now
+                    apply_command(tbot, controller, command, now)
+                else:
+                    if controller.last_scan:
+                        controller.last_scan[0] = controller.sanitize_distance(front_distance)
+
+                    if controller.should_scan(front_distance, now):
+                        perform_scan(tbot, controller)
+                        front_distance = controller.last_scan.get(0, front_distance)
+                        if on_inline_line:
+                            print()
+                            on_inline_line = False
+                        _print_scan(controller.last_scan)
+                        print(f"[HEAT] {controller.format_heatmap()}  (danger memory, █=avoid)")
+
+                    command = controller.plan(front_distance, now)
+                    emotion = _describe_lights(command, controller, front_distance)
                     stress_ch = ' ░▒▓█'[min(4, int(controller.stress * 5))]
-                    print(f"\r[FOLLOW] front={fd_str}  err={err:+.0f}cm  {action}  stress={stress_ch}  | {emotion}   ", end='', flush=True)
-                    on_inline_line = True
-                    last_print_time = now
-                apply_command(tbot, controller, command, now)
-            else:
-                if controller.last_scan:
-                    controller.last_scan[0] = controller.sanitize_distance(front_distance)
+                    quip = controller.get_quip(command.mode, front_distance, command.heading, now)
 
-                if controller.should_scan(front_distance, now):
-                    perform_scan(tbot, controller)
-                    front_distance = controller.last_scan.get(0, front_distance)
-                    if on_inline_line:
-                        print()
-                        on_inline_line = False
-                    _print_scan(controller.last_scan)
-                    print(f"[HEAT] {controller.format_heatmap()}  (danger memory, █=avoid)")
-
-                command = controller.plan(front_distance, now)
-                emotion = _describe_lights(command, controller, front_distance)
-                stress_ch = ' ░▒▓█'[min(4, int(controller.stress * 5))]
-                quip = controller.get_quip(command.mode, front_distance, command.heading, now)
-
-                if command.mode == "brave_push":
-                    if on_inline_line:
-                        print()
-                        on_inline_line = False
-                    print(f"[PUSH!]    front={front_distance:.0f}cm  → {quip if quip else 'CHARGE!'}  stress={stress_ch}  | {emotion}")
-                elif command.mode == "peek_pounce":
-                    if on_inline_line:
-                        print()
-                        on_inline_line = False
-                    side = "L" if command.heading < 0 else "R"
-                    print(f"[POUNCE]   front={front_distance:.0f}cm  →{side}  {quip if quip else 'pounce!'}  stress={stress_ch}  | {emotion}")
-                elif command.mode == "escape":
-                    if on_inline_line:
-                        print()
-                        on_inline_line = False
-                    esc_lvl = controller.get_escape_escalation_level(now)
-                    side = "L" if command.heading < 0 else "R"
-                    print(f"[ESCAPE-{esc_lvl}] front={front_distance:.0f}cm  →{side}  {quip if quip else 'evasive!'}  stress={stress_ch}  | {emotion}")
-                elif command.mode == "dead_end_recovery":
-                    if on_inline_line:
-                        print()
-                        on_inline_line = False
-                    side = "L" if command.heading < 0 else "R"
-                    print(f"[DEAD END] front={front_distance:.0f}cm  →{side}  {quip if quip else 'this wall again?'}  stress={stress_ch}  | {emotion}")
-                elif command.mode in ("victory_dance", "happy_wiggle", "frustrated_shimmy", "confident_strut",
+                    if command.mode == "brave_push":
+                        if on_inline_line:
+                            print()
+                            on_inline_line = False
+                        print(f"[PUSH!]    front={front_distance:.0f}cm  → {quip if quip else 'CHARGE!'}  stress={stress_ch}  | {emotion}")
+                    elif command.mode == "peek_pounce":
+                        if on_inline_line:
+                            print()
+                            on_inline_line = False
+                        side = "L" if command.heading < 0 else "R"
+                        print(f"[POUNCE]   front={front_distance:.0f}cm  →{side}  {quip if quip else 'pounce!'}  stress={stress_ch}  | {emotion}")
+                    elif command.mode == "escape":
+                        if on_inline_line:
+                            print()
+                            on_inline_line = False
+                        esc_lvl = controller.get_escape_escalation_level(now)
+                        side = "L" if command.heading < 0 else "R"
+                        print(f"[ESCAPE-{esc_lvl}] front={front_distance:.0f}cm  →{side}  {quip if quip else 'evasive!'}  stress={stress_ch}  | {emotion}")
+                    elif command.mode == "dead_end_recovery":
+                        if on_inline_line:
+                            print()
+                            on_inline_line = False
+                        side = "L" if command.heading < 0 else "R"
+                        print(f"[DEAD END] front={front_distance:.0f}cm  →{side}  {quip if quip else 'this wall again?'}  stress={stress_ch}  | {emotion}")
+                    elif command.mode in ("victory_dance", "happy_wiggle", "frustrated_shimmy", "confident_strut",
                                        "curious_tilt", "excited_bounce", "contemplative_circle", "celebration_spin",
                                        "surprise_shake", "spiral_exploration", "nervous_creep", "triumphant_arc",
                                        "confused_figure8", "relaxed_cruise", "alert_scan",
@@ -9727,10 +9828,10 @@ def main():
                         "corner_escape_relief",
                         "corridor_cruise", "boundary_relief", "straight_cruise_joy",
                         "smart_recovery_triumph"):
-                    if on_inline_line:
-                        print()
-                        on_inline_line = False
-                    move_labels = {
+                        if on_inline_line:
+                            print()
+                            on_inline_line = False
+                        move_labels = {
                         "victory_dance": "VICTORY DANCE",
                         "happy_wiggle": "HAPPY WIGGLE",
                         "frustrated_shimmy": "FRUSTRATED SHIMMY",
@@ -9798,11 +9899,11 @@ def main():
                         "straight_cruise_joy": "STRAIGHT CRUISE JOY",
                         "smart_recovery_triumph": "SMART RECOVERY TRIUMPH",
                     }
-                    label = move_labels.get(command.mode, command.mode)
-                    print(f"[{label}] front={front_distance:.0f}cm  mood={controller.current_mood}  | {emotion}")
-                else:
-                    if now - last_print_time >= print_interval:
-                        arrow = "←" if command.heading < -10 else ("→" if command.heading > 10 else "↑")
+                        label = move_labels.get(command.mode, command.mode)
+                        print(f"[{label}] front={front_distance:.0f}cm  mood={controller.current_mood}  | {emotion}")
+                    else:
+                        if now - last_print_time >= print_interval:
+                            arrow = "←" if command.heading < -10 else ("→" if command.heading > 10 else "↑")
                         terrain_tag = f" [{controller.terrain_class}]" if controller.terrain_class != "unknown" else ""
                         corner_tag = " [corner]" if controller.corner_detected else ""
                         momentum_tag = f" mom={controller.heading_momentum:+.2f}" if abs(controller.heading_momentum) > 0.2 else ""
@@ -9855,19 +9956,35 @@ def main():
                         on_inline_line = True
                         last_print_time = now
 
-                apply_command(tbot, controller, command, now)
+                    apply_command(tbot, controller, command, now)
+                loop_error_count = 0
+            except Exception as exc:
+                controller.current_speed = 0.0
+                controller.last_scan_time = -math.inf
+                loop_error_count += 1
+                if on_inline_line:
+                    print()
+                    on_inline_line = False
+                print(f"[WARN] loop recovery after {type(exc).__name__}: {exc}")
+                _safe_hardware_call(tbot.stop)
+                _safe_hardware_call(tbot.clear_underlighting)
+                _safe_hardware_call(tbot.set_servo_angle, 0)
+                if controller.config.crash_recovery_enabled:
+                    _safe_sleep(controller.config.crash_recovery_backoff_s)
+                if loop_error_count >= controller.config.crash_recovery_attempts:
+                    loop_error_count = 0
 
-            time.sleep(controller.config.loop_delay_s)
+            _safe_sleep(controller.config.loop_delay_s)
     finally:
-        tbot.stop()
-        tbot.clear_underlighting()
+        _safe_hardware_call(tbot.stop)
+        _safe_hardware_call(tbot.clear_underlighting)
         try:
-            tbot.set_servo_angle(0)
-            time.sleep(0.1)
-            tbot.disable_servo()
+            _safe_hardware_call(tbot.set_servo_angle, 0)
+            _safe_sleep(0.1)
+            _safe_hardware_call(tbot.disable_servo)
         except Exception:
             pass
-        tbot.cleanup()
+        _safe_hardware_call(tbot.cleanup)
 
     if launch_distance_lights:
         print("\n[Y] Launching distance_lights.py ...")
