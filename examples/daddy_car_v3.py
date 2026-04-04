@@ -854,8 +854,8 @@ class AutonomousCarConfig:
     predictive_path_planning: bool = True                   # enable path prediction
     path_planning_horizon: int = 5                          # steps to look ahead
     adaptive_speed_profile: bool = True                     # speed adapts to terrain
-    straight_preference_gain: float = 18.0                 # bonus for staying straight when the forward lane is already strong
-    straight_preference_distance: float = 85.0             # minimum front clearance before strong straight-line preference applies
+    straight_preference_gain: float = 28.0                 # bonus for staying straight when the forward lane is already strong
+    straight_preference_distance: float = 72.0             # minimum front clearance before strong straight-line preference applies
     allow_emotional_moves: bool = False                    # favour continuous progress over choreographed moves
     allow_room_sweep: bool = False                         # disable nonessential coverage sweeps by default
     allow_wander: bool = False                             # disable nonessential wander mode by default
@@ -4090,6 +4090,8 @@ class AutonomousCarController:
     # ─── Gen19+Gen20: Emotional moves ─────────────────────────────────────
 
     def check_emotional_triggers(self, front_distance: float, now: float, mode: str):
+        if not self.config.allow_emotional_moves:
+            return
         if self.emotional_move_active:
             return
         self.check_discovery(front_distance, now)
@@ -4265,6 +4267,9 @@ class AutonomousCarController:
     # ─── Gen18: Mood system ───────────────────────────────────────────────
 
     def set_mood(self, mood: str, now: float, trigger: str = ""):
+        if not self.config.allow_emotional_moves and mood == "celebration":
+            mood = "neutral"
+            trigger = ""
         self.current_mood = mood
         self.mood_start_time = now
         self.celebration_trigger = trigger
@@ -6092,6 +6097,8 @@ class AutonomousCarController:
     # ─── Gen25: Enhanced emotional triggers ───────────────────────────────
 
     def check_emotional_triggers_gen25(self, front_distance: float, now: float, mode: str):
+        if not self.config.allow_emotional_moves:
+            return
         if self.emotional_move_active:
             return
         if mode == "drive" and front_distance > self.config.open_space_distance and self.satisfaction_level > 0.6:
@@ -6192,6 +6199,8 @@ class AutonomousCarController:
 
     def check_emotional_triggers_gen26(self, front_distance: float, now: float, mode: str):
         """Gen26: context-aware emotional triggers with diversity tracking."""
+        if not self.config.allow_emotional_moves:
+            return
         if self.emotional_move_active:
             return
 
@@ -7525,7 +7534,7 @@ class AutonomousCarController:
             self.clear_pounce_commitment()
             self.last_playful_charge_time = now
             self.current_speed = 0.0
-            self.set_mood("celebration", now, "play_invitation")
+            self.set_mood("confident", now, "play_invitation")
             self.update_flow_memory(0, front_distance)
             wiggle = self.config.playful_charge_wiggle_bias
             if self.total_loops % 2 == 0:

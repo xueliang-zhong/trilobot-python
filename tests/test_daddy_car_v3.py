@@ -31,6 +31,28 @@ class DaddyCarV3Tests(unittest.TestCase):
         controller.trigger_emotional_move("victory_dance", now=100.0)
         self.assertFalse(controller.emotional_move_active)
 
+    def test_disabled_emotional_moves_do_not_switch_into_celebration_mood(self):
+        module = load_daddy_car_v3_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+        controller.success_streak = 10
+
+        controller.check_emotional_triggers(front_distance=130.0, now=100.0, mode="drive")
+
+        self.assertEqual(controller.current_mood, "neutral")
+        self.assertFalse(controller.emotional_move_active)
+
+    def test_default_controller_prefers_straight_in_moderately_open_space(self):
+        module = load_daddy_car_v3_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+
+        heading = controller.select_heading(
+            scan={-80: 82.0, -45: 86.0, 0: 78.0, 45: 88.0, 80: 80.0},
+            front_distance=78.0,
+            now=50.0,
+        )
+
+        self.assertEqual(heading, 0)
+
     def test_select_heading_prefers_straight_when_front_lane_is_fast_and_safe(self):
         module = load_daddy_car_v3_module()
         config = module.AutonomousCarConfig(
