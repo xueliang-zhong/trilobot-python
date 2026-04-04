@@ -116,6 +116,9 @@ class AutonomousCarConfig:
     motion_stuck_release_progress_cm: float = 6.0
     motion_stuck_hold_s: float = 1.2
     motion_stuck_snapshot_gap_s: float = 1.2
+    motion_stuck_window_s: float = 2.6
+    motion_stuck_mean_delta_cm: float = 2.4
+    motion_stuck_max_delta_cm: float = 4.2
     visual_stuck_recovery_hold_s: float = 2.5
     open_space_distance: float = 70.0
     open_space_speed: float = 0.90
@@ -878,6 +881,7 @@ class AutonomousCarController:
     current_heading: int = field(default=0)
     last_position_observation: Dict[int, float] = field(default_factory=dict)
     last_position_observation_time: float = field(default=-math.inf)
+    position_observation_history: Deque[Tuple[float, Dict[int, float]]] = field(init=False)
     visual_stuck_since: float = field(default=-math.inf)
     visually_stuck_until: float = field(default=-math.inf)
     last_visual_stuck_trigger_time: float = field(default=-math.inf)
@@ -1328,6 +1332,7 @@ class AutonomousCarController:
         self.emotional_memory = deque(maxlen=self.config.emotional_memory_window)
         self.open_space_seek_entries = deque(maxlen=self.config.open_space_seek_max_entries)
         self.recovery_pattern_history = deque(maxlen=self.config.recovery_pattern_window)
+        self.position_observation_history = deque(maxlen=32)
         # Gen30: performance monitoring
         self.performance_loop_times = deque(maxlen=10)
         self._init_scoring_weights()
@@ -1344,11 +1349,12 @@ class AutonomousCarController:
         return len(self.stuck_escape_times) >= self.config.stuck_escape_count
 
     def build_position_observation(self, front_distance: float) -> Dict[int, float]:
-        return {
-            -45: self.sanitize_distance(self.last_scan.get(-45, 0.0)),
-            0: self.sanitize_distance(front_distance),
-            45: self.sanitize_distance(self.last_scan.get(45, 0.0)),
+        observation = {
+            angle: self.sanitize_distance(self.last_scan.get(angle, 0.0))
+            for angle in self.config.scan_angles
         }
+        observation[0] = self.sanitize_distance(front_distance)
+        return observation
 
     def is_visually_stuck(self, now: float) -> bool:
         return now <= self.visually_stuck_until
@@ -1361,34 +1367,54 @@ class AutonomousCarController:
         if not moving_attempt or observation[0] <= 0.0:
             self.last_position_observation = observation
             self.last_position_observation_time = now
+            self.position_observation_history.clear()
             self.visual_stuck_since = -math.inf
             if now > self.visually_stuck_until and observation[0] > 0.0:
                 self.visually_stuck_until = -math.inf
             return False
+
+        self.position_observation_history.append((now, observation))
+        cutoff = now - self.config.motion_stuck_window_s
+        while self.position_observation_history and self.position_observation_history[0][0] < cutoff:
+            self.position_observation_history.popleft()
 
         if self.last_position_observation:
             dt = now - self.last_position_observation_time
             if 0.0 < dt <= self.config.motion_stuck_snapshot_gap_s:
                 deltas = [
                     abs(observation[angle] - self.last_position_observation.get(angle, 0.0))
-                    for angle in (-45, 0, 45)
+                    for angle in self.config.scan_angles
                     if observation[angle] > 0.0 and self.last_position_observation.get(angle, 0.0) > 0.0
                 ]
                 progress = max(deltas) if deltas else 0.0
-                if progress <= self.config.motion_stuck_progress_epsilon_cm:
-                    if self.visual_stuck_since == -math.inf:
-                        self.visual_stuck_since = self.last_position_observation_time
-                    if (
-                        now - self.visual_stuck_since >= self.config.motion_stuck_hold_s
-                        and now - self.last_visual_stuck_trigger_time >= self.config.motion_stuck_hold_s
-                    ):
-                        self.visually_stuck_until = now + self.config.visual_stuck_recovery_hold_s
-                        self.last_visual_stuck_trigger_time = now
-                        self.record_notable_event("visual_stuck", now)
-                        triggered = True
-                elif progress >= self.config.motion_stuck_release_progress_cm:
+                if progress >= self.config.motion_stuck_release_progress_cm:
                     self.visual_stuck_since = -math.inf
                     self.visually_stuck_until = -math.inf
+
+        if len(self.position_observation_history) >= 2:
+            start_time, start_observation = self.position_observation_history[0]
+            window_deltas = [
+                abs(observation[angle] - start_observation.get(angle, 0.0))
+                for angle in self.config.scan_angles
+                if observation[angle] > 0.0 and start_observation.get(angle, 0.0) > 0.0
+            ]
+            mean_delta = sum(window_deltas) / len(window_deltas) if window_deltas else 0.0
+            max_delta = max(window_deltas) if window_deltas else 0.0
+            if (
+                now - start_time >= self.config.motion_stuck_hold_s
+                and mean_delta <= self.config.motion_stuck_mean_delta_cm
+                and max_delta <= self.config.motion_stuck_max_delta_cm
+            ):
+                if self.visual_stuck_since == -math.inf:
+                    self.visual_stuck_since = start_time
+                if now - self.last_visual_stuck_trigger_time >= self.config.motion_stuck_hold_s:
+                    self.visually_stuck_until = now + self.config.visual_stuck_recovery_hold_s
+                    self.last_visual_stuck_trigger_time = now
+                    self.record_notable_event("visual_stuck", now)
+                    triggered = True
+            elif max_delta >= self.config.motion_stuck_release_progress_cm:
+                self.visual_stuck_since = -math.inf
+                self.visually_stuck_until = -math.inf
 
         self.last_position_observation = observation
         self.last_position_observation_time = now
@@ -3266,6 +3292,7 @@ class AutonomousCarController:
         """Reset recovery state when navigation is successful."""
         self.recovery_stage = 0
         self.recovery_stage_time = -math.inf
+        self.position_observation_history.clear()
         self.visual_stuck_since = -math.inf
         self.visually_stuck_until = -math.inf
 

@@ -198,6 +198,24 @@ class DaddyCarV3Tests(unittest.TestCase):
 
         self.assertTrue(controller.is_visually_stuck(2.5))
 
+    def test_update_position_awareness_detects_stuck_despite_small_sensor_wobble(self):
+        module = load_daddy_car_v3_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+        controller.current_speed = 0.62
+
+        snapshots = [
+            (1.0, {-80: 36.0, -45: 34.0, 0: 32.0, 45: 33.0, 80: 35.0}, 32.0),
+            (1.7, {-80: 38.1, -45: 36.2, 0: 33.9, 45: 35.1, 80: 37.0}, 33.9),
+            (2.5, {-80: 36.4, -45: 34.4, 0: 32.3, 45: 33.2, 80: 35.4}, 32.3),
+            (3.3, {-80: 37.9, -45: 35.8, 0: 33.4, 45: 34.7, 80: 36.8}, 33.4),
+        ]
+
+        for now, scan, front in snapshots:
+            controller.last_scan = scan
+            controller.update_position_awareness(front_distance=front, now=now)
+
+        self.assertTrue(controller.is_visually_stuck(3.3))
+
     def test_plan_uses_recovery_when_visually_stuck_even_without_front_danger(self):
         module = load_daddy_car_v3_module()
         controller = module.AutonomousCarController(module.AutonomousCarConfig())
