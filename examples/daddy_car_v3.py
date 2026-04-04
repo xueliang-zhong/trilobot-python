@@ -7853,6 +7853,151 @@ def _print_scan(scan: Dict[int, float]):
     print(f"[SCAN] {parts} cm")
 
 
+ANSI_RESET = "\x1b[0m"
+ANSI_BOLD = "\x1b[1m"
+ANSI_DIM = "\x1b[2m"
+
+
+def _ansi_fg(rgb: Colour) -> str:
+    return f"\x1b[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
+
+
+def _ansi_bg(rgb: Colour) -> str:
+    return f"\x1b[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m"
+
+
+def _tui_distance_colour(front_distance: float, cfg: "AutonomousCarConfig") -> Colour:
+    if front_distance <= 0.0 or front_distance <= cfg.danger_distance:
+        return (255, 48, 0)
+    if front_distance <= cfg.caution_distance:
+        return (255, 170, 0)
+    if front_distance <= cfg.cruise_distance:
+        return (64, 220, 96)
+    return (32, 220, 210)
+
+
+def _tui_heading_colour(heading: int) -> Colour:
+    if heading < -10:
+        return (255, 140, 0)
+    if heading > 10:
+        return (64, 140, 255)
+    return (64, 220, 96)
+
+
+def _tui_speed_colour(speed: float, cfg: "AutonomousCarConfig") -> Colour:
+    if speed < 0.30:
+        return (80, 80, 96)
+    if speed < cfg.cruise_speed:
+        return (0, 170, 160)
+    return (32, 255, 220)
+
+
+def render_underlight_swatch(rgb: Colour, label: str = "") -> str:
+    block = f"{_ansi_bg(rgb)}  {ANSI_RESET}"
+    if label:
+        return f"{block} {label}"
+    return block
+
+
+def _render_scan_bar(distance: float, max_distance: float, width: int = 18) -> str:
+    ratio = 0.0 if max_distance <= 0 else max(0.0, min(1.0, distance / max_distance))
+    filled = int(round(ratio * width))
+    empty = width - filled
+    return "█" * filled + "·" * empty
+
+
+def _heading_arrow(heading: int) -> str:
+    if heading < -12:
+        return "↖"
+    if heading > 12:
+        return "↗"
+    return "↑"
+
+
+def _box(title: str, lines: list[str], accent: Colour) -> list[str]:
+    width = max(len(title) + 2, *(len(line) for line in lines)) if lines else len(title) + 2
+    top = f"{_ansi_fg(accent)}┌─ {title}{'─' * max(0, width - len(title) - 1)}┐{ANSI_RESET}"
+    body = [f"{_ansi_fg(accent)}│{ANSI_RESET} {line.ljust(width)} {_ansi_fg(accent)}│{ANSI_RESET}" for line in lines]
+    bottom = f"{_ansi_fg(accent)}└{'─' * (width + 2)}┘{ANSI_RESET}"
+    return [top, *body, bottom]
+
+
+def render_tui_dashboard(
+    controller: "AutonomousCarController",
+    command: MotionCommand,
+    front_distance: float,
+    emotion: str,
+    quip: str,
+    now: float,
+    follow_mode: bool,
+    light_description: str = "",
+    transient_message: str = "",
+) -> str:
+    scan = controller.last_scan or {angle: 0.0 for angle in controller.config.scan_angles}
+    max_distance = max(controller.config.max_distance, 1.0)
+    see_lines = []
+    for angle in sorted(scan):
+        distance = controller.sanitize_distance(scan.get(angle, 0.0))
+        colour = _tui_distance_colour(distance, controller.config)
+        bar = _render_scan_bar(distance, max_distance)
+        see_lines.append(f"{_ansi_fg(colour)}{angle:+4d}{ANSI_RESET} {bar} {distance:5.1f}cm")
+    see_lines.append(f"heat  {controller.format_heatmap()}")
+    see_lines.append(
+        f"trap  body>={controller.required_gap_width():.0f}cm  pinch<={controller.config.min_side_clearance_cm:.0f}cm"
+    )
+
+    decision = command.mode.upper().replace("_", " ")
+    heading_word = "straight"
+    if command.heading < -10:
+        heading_word = "left"
+    elif command.heading > 10:
+        heading_word = "right"
+    plan_bits = [
+        f"{_heading_arrow(command.heading)} {decision}",
+        f"bias {heading_word}",
+    ]
+    if follow_mode:
+        plan_bits.append("target lock")
+    elif controller.current_speed > 0.01:
+        plan_bits.append("keep rolling")
+    if command.mode in ("escape", "dead_end_recovery"):
+        plan_bits.append("clear hazard")
+    elif front_distance >= controller.config.straight_preference_distance:
+        plan_bits.append("hold straight")
+
+    think_lines = [
+        f"plan   {' | '.join(plan_bits)}",
+        f"front  {front_distance:5.1f}cm   speed {controller.current_speed:.2f}   hdg {command.heading:+d}",
+        f"brain  {'FOLLOW' if follow_mode else controller.get_personality_label().upper()}   mood {controller.current_mood}   stress {controller.stress:.2f}",
+        f"world  {controller.terrain_class}   area {controller.last_area_classification}   flow {controller.flow_state}",
+        f"lights {emotion}",
+        f"sync   {light_description or 'no light sync text'}",
+        f"quip   {quip or '...'}",
+    ]
+    if transient_message:
+        think_lines.append(f"event  {transient_message}")
+
+    light_lines = [
+        f"{render_underlight_swatch(_tui_distance_colour(front_distance, controller.config), 'front')}",
+        f"{render_underlight_swatch(_tui_heading_colour(command.heading), 'steer')}",
+        f"{render_underlight_swatch(_tui_speed_colour(controller.current_speed, controller.config), 'rear')}",
+        f"{render_underlight_swatch(command.colour, 'drive intent')}",
+    ]
+
+    header = [
+        "\x1b[H\x1b[2J",
+        f"{ANSI_BOLD}{_ansi_fg((255, 210, 80))}TRILOBOT AUTONOMOUS COMMAND DECK{ANSI_RESET}",
+        f"{ANSI_DIM}time {now:8.1f}s  scan_age {max(0.0, now - controller.last_scan_time):4.2f}s  autonomy {'FOLLOW' if follow_mode else 'ROAM'}{ANSI_RESET}",
+    ]
+
+    layout = [
+        *_box("SEE", see_lines, (64, 220, 255)),
+        *_box("THINK", think_lines, (255, 170, 64)),
+        *_box("LIGHTS", light_lines, (180, 120, 255)),
+    ]
+    return "\n".join(header + [""] + layout) + ANSI_RESET
+
+
 def _describe_lights(command: MotionCommand, controller: "AutonomousCarController", front_distance: float) -> str:
     """Return a compact human-readable description of the current light emotion."""
     cfg = controller.config
@@ -9736,19 +9881,20 @@ def main():
 
     tbot = Trilobot()
     controller = AutonomousCarController(AutonomousCarConfig())
-    on_inline_line = False
     last_print_time = 0.0
     print_interval = 0.3
     launch_distance_lights = False
     follow_mode = False
     btn_a_prev = False
     loop_error_count = 0
+    transient_message = "boot complete"
 
     try:
         _safe_hardware_call(tbot.initialise_servo)
         _safe_hardware_call(tbot.set_servo_angle, 0)
         _safe_sleep(0.25)
         startup_spin_scan(tbot, controller)
+        transient_message = "startup scan complete"
 
         while True:
             if _safe_hardware_call(tbot.read_button, BUTTON_X, default=False):
@@ -9758,11 +9904,8 @@ def main():
                 btn_a_now = bool(_safe_hardware_call(tbot.read_button, BUTTON_A, default=False))
                 if btn_a_now and not btn_a_prev:
                     follow_mode = not follow_mode
-                    if on_inline_line:
-                        print()
-                        on_inline_line = False
                     label = "FOLLOW mode ON  (A again to return)" if follow_mode else "AUTONOMOUS mode"
-                    print(f"[A] {label}")
+                    transient_message = label
                 btn_a_prev = btn_a_now
 
                 if _safe_hardware_call(tbot.read_button, BUTTON_Y, default=False):
@@ -9781,20 +9924,26 @@ def main():
 
                 if follow_mode:
                     command = controller.plan_follow(front_distance)
-                    emotion = _describe_lights(command, controller, front_distance)
+                    light_description = _describe_lights(command, controller, front_distance)
+                    emotion = light_description.split("|", 1)[0].strip()
+                    quip = "locking target distance"
                     if now - last_print_time >= print_interval:
-                        fd_str = f"{front_distance:.0f}cm" if front_distance > 0 else " ---"
-                        err = front_distance - controller.config.follow_target_distance if front_distance > 0 else 0.0
-                        if command.left_speed > 0.01:
-                            action = "chasing →"
-                        elif command.left_speed < -0.01:
-                            action = "← backing"
-                        else:
-                            action = "holding  "
-                        stress_ch = ' ░▒▓█'[min(4, int(controller.stress * 5))]
-                        print(f"\r[FOLLOW] front={fd_str}  err={err:+.0f}cm  {action}  stress={stress_ch}  | {emotion}   ", end='', flush=True)
-                        on_inline_line = True
+                        print(
+                            render_tui_dashboard(
+                                controller,
+                                command,
+                                front_distance,
+                                emotion,
+                                quip,
+                                now,
+                                follow_mode=True,
+                                light_description=light_description,
+                                transient_message=transient_message,
+                            ),
+                            flush=True,
+                        )
                         last_print_time = now
+                        transient_message = ""
                     apply_command(tbot, controller, command, now)
                 else:
                     if controller.last_scan:
@@ -9803,189 +9952,41 @@ def main():
                     if controller.should_scan(front_distance, now):
                         perform_scan(tbot, controller)
                         front_distance = controller.last_scan.get(0, front_distance)
-                        if on_inline_line:
-                            print()
-                            on_inline_line = False
-                        _print_scan(controller.last_scan)
-                        print(f"[HEAT] {controller.format_heatmap()}  (danger memory, █=avoid)")
+                        transient_message = "scan refreshed"
 
                     command = controller.plan(front_distance, now)
-                    emotion = _describe_lights(command, controller, front_distance)
-                    stress_ch = ' ░▒▓█'[min(4, int(controller.stress * 5))]
+                    light_description = _describe_lights(command, controller, front_distance)
+                    emotion = light_description.split("|", 1)[0].strip()
                     quip = controller.get_quip(command.mode, front_distance, command.heading, now)
-
-                    if command.mode == "brave_push":
-                        if on_inline_line:
-                            print()
-                            on_inline_line = False
-                        print(f"[PUSH!]    front={front_distance:.0f}cm  → {quip if quip else 'CHARGE!'}  stress={stress_ch}  | {emotion}")
-                    elif command.mode == "peek_pounce":
-                        if on_inline_line:
-                            print()
-                            on_inline_line = False
-                        side = "L" if command.heading < 0 else "R"
-                        print(f"[POUNCE]   front={front_distance:.0f}cm  →{side}  {quip if quip else 'pounce!'}  stress={stress_ch}  | {emotion}")
-                    elif command.mode == "escape":
-                        if on_inline_line:
-                            print()
-                            on_inline_line = False
+                    if command.mode == "escape":
                         esc_lvl = controller.get_escape_escalation_level(now)
-                        side = "L" if command.heading < 0 else "R"
-                        print(f"[ESCAPE-{esc_lvl}] front={front_distance:.0f}cm  →{side}  {quip if quip else 'evasive!'}  stress={stress_ch}  | {emotion}")
+                        transient_message = f"escape level {esc_lvl}"
                     elif command.mode == "dead_end_recovery":
-                        if on_inline_line:
-                            print()
-                            on_inline_line = False
-                        side = "L" if command.heading < 0 else "R"
-                        print(f"[DEAD END] front={front_distance:.0f}cm  →{side}  {quip if quip else 'this wall again?'}  stress={stress_ch}  | {emotion}")
-                    elif command.mode in ("victory_dance", "happy_wiggle", "frustrated_shimmy", "confident_strut",
-                                       "curious_tilt", "excited_bounce", "contemplative_circle", "celebration_spin",
-                                       "surprise_shake", "spiral_exploration", "nervous_creep", "triumphant_arc",
-                                       "confused_figure8", "relaxed_cruise", "alert_scan",
-                                       "satisfied_purr", "determined_lunge", "grateful_bow", "victory_lap",
-                                       "curious_sniff", "gentle_weave", "happy_hop",
-                                        "boustrophedon", "zoomies", "play_bow", "peek_a_boo", "stalk_mode",
-                                        "greeting", "sleep_mode", "backing_dance", "serpentine",
-                                        "explorer_pride", "mapping_joy", "corridor_dance",
-                                        "open_space_celebration", "wall_caress", "discovery_spin",
-                        "curious_probe", "excited_wiggle", "contemplative_pause", "confident_cruise",
-                        "explorer_sprint", "cautious_approach", "joyful_bounce", "discovery_celebration",
-                        "room_sweep",
-                        "joyful_spin", "curious_weave", "excited_dash", "peaceful_glide",
-                        "mischievous_zigzag", "proud_parade", "wonder_gaze", "energetic_hop",
-                        "flow_dance", "gratitude", "relief", "wonder", "playful_dart",
-                        "victory_bow", "contented_sway", "triumphant_burst",
-                        "straight_streak_celebration", "open_space_joy", "gap_fill_satisfaction",
-                        "corner_escape_relief",
-                        "corridor_cruise", "boundary_relief", "straight_cruise_joy",
-                        "smart_recovery_triumph"):
-                        if on_inline_line:
-                            print()
-                            on_inline_line = False
-                        move_labels = {
-                        "victory_dance": "VICTORY DANCE",
-                        "happy_wiggle": "HAPPY WIGGLE",
-                        "frustrated_shimmy": "FRUSTRATED SHIMMY",
-                        "confident_strut": "CONFIDENT STRUT",
-                        "curious_tilt": "CURIOUS TILT",
-                        "excited_bounce": "EXCITED BOUNCE",
-                        "contemplative_circle": "CONTEMPLATIVE CIRCLE",
-                        "celebration_spin": "CELEBRATION SPIN",
-                        "surprise_shake": "SURPRISE SHAKE",
-                        "spiral_exploration": "SPIRAL EXPLORATION",
-                        "nervous_creep": "NERVOUS CREEP",
-                        "triumphant_arc": "TRIUMPHANT ARC",
-                        "confused_figure8": "CONFUSED FIGURE-8",
-                        "relaxed_cruise": "RELAXED CRUISE",
-                        "alert_scan": "ALERT SCAN",
-                        "satisfied_purr": "SATISFIED PURR",
-                        "determined_lunge": "DETERMINED LUNGE",
-                        "grateful_bow": "GRATEFUL BOW",
-                        "victory_lap": "VICTORY LAP",
-                        "curious_sniff": "CURIOUS SNIFF",
-                        "gentle_weave": "GENTLE WEAVE",
-                        "happy_hop": "HAPPY HOP",
-                        "boustrophedon": "BOUSTROPHEDON",
-                        "zoomies": "ZOOMIES",
-                        "play_bow": "PLAY BOW",
-                        "peek_a_boo": "PEEK-A-BOO",
-                        "stalk_mode": "STALK MODE",
-                        "greeting": "GREETING",
-                        "sleep_mode": "SLEEP MODE",
-                        "backing_dance": "BACKING DANCE",
-                        "serpentine": "SERPENTINE",
-                        "explorer_pride": "EXPLORER PRIDE",
-                        "mapping_joy": "MAPPING JOY",
-                        "corridor_dance": "CORRIDOR DANCE",
-                        "open_space_celebration": "OPEN SPACE CELEBRATION",
-                        "wall_caress": "WALL CARESS",
-                        "discovery_spin": "DISCOVERY SPIN",
-                        "curious_probe": "CURIOUS PROBE",
-                        "excited_wiggle": "EXCITED WIGGLE",
-                        "contemplative_pause": "CONTEMPLATIVE PAUSE",
-                        "confident_cruise": "CONFIDENT CRUISE",
-                        "explorer_sprint": "EXPLORER SPRINT",
-                        "cautious_approach": "CAUTIOUS APPROACH",
-                        "joyful_bounce": "JOYFUL BOUNCE",
-                        "discovery_celebration": "DISCOVERY CELEBRATION",
-                        "room_sweep": "ROOM SWEEP",
-                        "joyful_spin": "JOYFUL SPIN",
-                        "curious_weave": "CURIOUS WEAVE",
-                        "excited_dash": "EXCITED DASH",
-                        "peaceful_glide": "PEACEFUL GLIDE",
-                        "mischievous_zigzag": "MISCHIEVOUS ZIGZAG",
-                        "proud_parade": "PROUD PARADE",
-                        "wonder_gaze": "WONDER GAZE",
-                        "energetic_hop": "ENERGETIC HOP",
-                        "flow_dance": "FLOW DANCE",
-                        "gratitude": "GRATITUDE",
-                        "relief": "RELIEF",
-                        "wonder": "WONDER",
-                        "playful_dart": "PLAYFUL DART",
-                        "victory_bow": "VICTORY BOW",
-                        "contented_sway": "CONTENTED SWAY",
-                        "triumphant_burst": "TRIUMPHANT BURST",
-                        "corridor_cruise": "CORRIDOR CRUISE",
-                        "boundary_relief": "BOUNDARY RELIEF",
-                        "straight_cruise_joy": "STRAIGHT CRUISE JOY",
-                        "smart_recovery_triumph": "SMART RECOVERY TRIUMPH",
-                    }
-                        label = move_labels.get(command.mode, command.mode)
-                        print(f"[{label}] front={front_distance:.0f}cm  mood={controller.current_mood}  | {emotion}")
-                    else:
-                        if now - last_print_time >= print_interval:
-                            arrow = "←" if command.heading < -10 else ("→" if command.heading > 10 else "↑")
-                        terrain_tag = f" [{controller.terrain_class}]" if controller.terrain_class != "unknown" else ""
-                        corner_tag = " [corner]" if controller.corner_detected else ""
-                        momentum_tag = f" mom={controller.heading_momentum:+.2f}" if abs(controller.heading_momentum) > 0.2 else ""
-                        personality = controller.get_personality_label()
-                        streak = f" streak={controller.success_streak}" if controller.success_streak >= 3 else ""
-                        quip_tag = f"  «{quip}»" if quip else ""
-                        closing_tag = f"  [closing]" if controller.last_side_closing > 0.5 else ""
-                        exit_tag = f"  [exit→{controller.corridor_exit_heading:+d}]" if controller.corridor_exit_detected else ""
-                        recovery_tag = f"  [recovery:{controller.recovery_stage}]" if controller.recovery_stage > 0 else ""
-                        dead_end_pred_tag = "  [dead-end predicted]" if controller.dead_end_predicted else ""
-                        shape_tag = f"  [{controller.obstacle_shape}]" if controller.obstacle_shape != "unknown" else ""
-                        achievement_tag = f"  [🏆{controller.achievement_count}]" if controller.achievement_count > 0 else ""
-                        junction_tag = f"  [{controller.junction_type}J]" if controller.junction_detected else ""
-                        strategy_tag = f"  [{controller.current_exploration_strategy}]" if controller.current_exploration_strategy != "balanced" else ""
-                        patience_tag = "  [patience]" if controller.tactical_patience_active else ""
-                        nearmiss_tag = f"  [near-miss×{len(controller.near_miss_history)}]" if len(controller.near_miss_history) >= 3 else ""
-                        loop_tag = f"  [loop×{controller.loop_count}]" if controller.loop_count > 0 and now - controller.last_loop_detection_time < 15.0 else ""
-                        wf_tag = "  [wall-follow]" if controller.wall_following_escape_active else ""
-                        moving_tag = f"  [moving@{','.join(str(a) for a in sorted(controller.moving_obstacles))}]" if controller.moving_obstacles else ""
-                        hysteresis_tag = f"  [hysteresis×{controller.heading_hysteresis_count}]" if controller.heading_hysteresis_count > 0 else ""
-                        side_corridor_tag = f"  [side→{controller.side_corridor_heading:+d}]" if controller.side_corridor_detected else ""
-                        cluster_tag = f"  [cluster×{controller.obstacle_cluster_tightness:.1f}]" if controller.obstacle_cluster_detected else ""
-                        flow_tag = f"  [{controller.flow_state}]" if controller.flow_state != "normal" else ""
-                        fortune = controller.generate_fortune(now)
-                        fortune_tag = f"  «{fortune}»" if fortune else ""
-                        coverage_tag = f"  [cov:{controller.coverage_ratio():.0%}]" if controller.total_coverage_cells_visited > 0 else ""
-                        mood_tag = f"  [{controller.current_mood}]" if controller.current_mood != "neutral" else ""
-                        straight_tag = f"  [straight×{now - controller.straight_line_start_time:.0f}s]" if controller.straight_line_bonus_active else ""
-                        emotag = f"  [{command.mode}]" if command.mode in ("victory_dance", "happy_wiggle", "frustrated_shimmy", "confident_strut") else ""
-                        grid_tag = f"  [grid:{controller.grid_coverage_ratio():.0%}]" if controller.total_grid_cells_visited > 0 else ""
-                        spiral_tag = "  [spiral]" if controller.spiral_active else ""
-                        smooth_tag = f"  [smooth:{controller.path_smoothness_score:.1f}]" if controller.path_smoothness_score > 0.3 else ""
-                        cruise_tag = f"  [CRUISE×{controller.cruise_mode_escalation}]" if controller.cruise_mode_active else ""
-                        satisfaction_tag = f"  [satisfaction:{controller.satisfaction_level:.1f}]" if controller.satisfaction_level > 0.5 else ""
-                        boustrophedon_tag = "  [BOUSTROPHEDON]" if controller.boustrophedon_active else ""
-                        playfulness_tag = f"  [playful:{controller.playfulness_level:.1f}]" if controller.playfulness_level > 0.5 else ""
-                        room_tag = f"  [room:{controller.get_room_openness():.0%}]" if controller.room_shape_map else ""
-                        momentum_tag2 = f"  [momentum:{controller.straight_line_momentum:.1f}]" if controller.straight_line_momentum > 0.2 else ""
-                        topo_tag = f"  [topo:{len(controller.topological_nodes)}n/{controller.count_unvisited_nodes()}u]" if controller.topological_nodes else ""
-                        area_tag = f"  [{controller.last_area_classification}]" if controller.last_area_classification != "unknown" else ""
-                        vfh_tag = f"  [VFH:{len(controller.vfh_valleys)}v]" if controller.vfh_valleys else ""
-                        highway_tag = f"  [HIGHWAY×{controller.highway_mode_escalation}]" if controller.highway_mode_active else ""
-                        chain_tag = f"  [chain:{len(controller.frontier_chain)}]" if controller.frontier_chain else ""
-                        sweep_tag = "  [ROOM-SWEEP]" if controller.room_sweep_active else ""
-                        hwy_momentum_tag = f"  [hwy-mom:{controller.highway_momentum:.1f}]" if controller.highway_momentum > 0.2 else ""
-                        corridor_tag = f"  [CORRIDOR]" if controller.cruise_corridor_active else ""
-                        wander_tag = "  [WANDER]" if controller.wander_active else ""
-                        patrol_tag = "  [EDGE-PATROL]" if controller.edge_patrol_active else ""
-                        print(f"\r[DRIVE] {arrow}  front={front_distance:5.1f}cm  hdg={command.heading:+4d}  spd={controller.current_speed:.2f}  stress={stress_ch}  [{personality}]{streak}{terrain_tag}{corner_tag}{momentum_tag}{closing_tag}{exit_tag}{recovery_tag}{shape_tag}{dead_end_pred_tag}{junction_tag}{strategy_tag}{patience_tag}{nearmiss_tag}{loop_tag}{wf_tag}{moving_tag}{hysteresis_tag}{side_corridor_tag}{cluster_tag}{flow_tag}{coverage_tag}{mood_tag}{straight_tag}{grid_tag}{spiral_tag}{smooth_tag}{cruise_tag}{satisfaction_tag}{boustrophedon_tag}{playfulness_tag}{room_tag}{momentum_tag2}{topo_tag}{area_tag}{vfh_tag}{highway_tag}{chain_tag}{sweep_tag}{hwy_momentum_tag}{corridor_tag}{wander_tag}{patrol_tag}{emotag}{achievement_tag}{quip_tag}{fortune_tag}  | {emotion}   ", end='', flush=True)
-                        on_inline_line = True
+                        transient_message = "dead end recovery"
+                    elif command.mode == "peek_pounce":
+                        transient_message = "peek and pounce"
+                    elif command.mode == "brave_push":
+                        transient_message = "brave push"
+                    elif command.mode not in ("drive", "follow"):
+                        transient_message = command.mode.replace("_", " ")
+
+                    if now - last_print_time >= print_interval:
+                        print(
+                            render_tui_dashboard(
+                                controller,
+                                command,
+                                front_distance,
+                                emotion,
+                                quip,
+                                now,
+                                follow_mode=False,
+                                light_description=light_description,
+                                transient_message=transient_message,
+                            ),
+                            flush=True,
+                        )
                         last_print_time = now
+                        transient_message = ""
 
                     apply_command(tbot, controller, command, now)
                 loop_error_count = 0
@@ -9993,10 +9994,8 @@ def main():
                 controller.current_speed = 0.0
                 controller.last_scan_time = -math.inf
                 loop_error_count += 1
-                if on_inline_line:
-                    print()
-                    on_inline_line = False
-                print(f"[WARN] loop recovery after {type(exc).__name__}: {exc}")
+                transient_message = f"loop recovery after {type(exc).__name__}: {exc}"
+                print(transient_message)
                 _safe_hardware_call(tbot.stop)
                 _safe_hardware_call(tbot.clear_underlighting)
                 _safe_hardware_call(tbot.set_servo_angle, 0)

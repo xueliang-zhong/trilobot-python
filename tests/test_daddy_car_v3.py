@@ -160,6 +160,39 @@ class DaddyCarV3Tests(unittest.TestCase):
         self.assertNotEqual(heading, -45)
         self.assertEqual(heading, 0)
 
+    def test_render_dashboard_includes_see_think_and_lights_sections(self):
+        module = load_daddy_car_v3_module()
+        controller = module.AutonomousCarController(module.AutonomousCarConfig())
+        controller.last_scan = {-80: 40.0, -45: 55.0, 0: 88.0, 45: 70.0, 80: 48.0}
+        controller.current_speed = 0.68
+        command = module.MotionCommand("drive", 0.68, 0.61, 12, (32, 200, 180))
+
+        dashboard = module.render_tui_dashboard(
+            controller=controller,
+            command=command,
+            front_distance=88.0,
+            emotion="feel=confident | F:teal M:green R:bright-teal",
+            quip="open road ahead",
+            now=12.0,
+            follow_mode=False,
+            transient_message="SCAN refreshed",
+        )
+
+        self.assertIn("SEE", dashboard)
+        self.assertIn("THINK", dashboard)
+        self.assertIn("LIGHTS", dashboard)
+        self.assertIn("open road ahead", dashboard)
+        self.assertIn("SCAN refreshed", dashboard)
+        self.assertIn("\x1b[", dashboard)
+
+    def test_render_underlight_swatch_uses_truecolor_ansi_blocks(self):
+        module = load_daddy_car_v3_module()
+
+        swatch = module.render_underlight_swatch((12, 34, 56), label="front")
+
+        self.assertIn("\x1b[48;2;12;34;56m", swatch)
+        self.assertIn("front", swatch)
+
 
 if __name__ == "__main__":
     unittest.main()
