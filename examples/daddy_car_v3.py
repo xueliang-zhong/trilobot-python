@@ -854,8 +854,8 @@ class AutonomousCarConfig:
     predictive_path_planning: bool = True                   # enable path prediction
     path_planning_horizon: int = 5                          # steps to look ahead
     adaptive_speed_profile: bool = True                     # speed adapts to terrain
-    straight_preference_gain: float = 28.0                 # bonus for staying straight when the forward lane is already strong
-    straight_preference_distance: float = 72.0             # minimum front clearance before strong straight-line preference applies
+    straight_preference_gain: float = 40.0                 # bonus for staying straight when the forward lane is already strong
+    straight_preference_distance: float = 35.0             # minimum front clearance before strong straight-line preference applies
     allow_emotional_moves: bool = False                    # favour continuous progress over choreographed moves
     allow_room_sweep: bool = False                         # disable nonessential coverage sweeps by default
     allow_wander: bool = False                             # disable nonessential wander mode by default
@@ -2133,9 +2133,9 @@ class AutonomousCarController:
                 score += self.config.straight_preference_gain
 
         if front_distance <= self.config.caution_distance:
-            score -= abs(angle) * 0.04
+            score -= abs(angle) * 0.15
         else:
-            score -= abs(angle) * 0.12
+            score -= abs(angle) * 0.40
 
         if angle == 0 and front_distance <= self.config.caution_distance:
             score -= self.config.caution_distance + max(self.config.caution_distance - distance, 0.0)
